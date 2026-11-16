@@ -754,10 +754,6 @@
    "carry"
   ],
   [
-   "worried",
-   "worry"
-  ],
-  [
    "married",
    "marry"
   ],
@@ -1154,10 +1150,6 @@
     "evening"
    ],
    [
-    "interesting",
-    "interesting"
-   ],
-   [
     "shot",
     "shoot"
    ],
@@ -1210,36 +1202,12 @@
     "accord"
    ],
    [
-    "amazing",
-    "amaze"
-   ],
-   [
     "armed",
     "arm"
    ],
    [
-    "concerned",
-    "concern"
-   ],
-   [
-    "convinced",
-    "convince"
-   ],
-   [
-    "excited",
-    "excite"
-   ],
-   [
-    "exciting",
-    "excite"
-   ],
-   [
     "hidden",
     "hide"
-   ],
-   [
-    "interested",
-    "interest"
    ],
    [
     "involved",
@@ -1250,32 +1218,12 @@
     "miss"
    ],
    [
-    "pleased",
-    "please"
-   ],
-   [
     "related",
     "relate"
    ],
    [
-    "scared",
-    "scare"
-   ],
-   [
-    "supposed",
-    "suppose"
-   ],
-   [
-    "surprised",
-    "surprise"
-   ],
-   [
     "used",
     "use"
-   ],
-   [
-    "worried",
-    "worry"
    ],
    [
     "written",
@@ -1288,10 +1236,6 @@
    [
     "existing",
     "exist"
-   ],
-   [
-    "united",
-    "unite"
    ],
    [
     "aids",
@@ -1383,6 +1327,10 @@
   [
    "learning",
    "learn"
+  ],
+  [
+   "scaffolding",
+   "scaffold"
   ]
  ],
  "verbalIng": [
@@ -1629,5 +1577,351 @@
     ]
    ]
   ]
- }
+ },
+ "lexicalizedAdjCases": [
+  [
+   "alarming",
+   "alarm"
+  ],
+  [
+   "amazed",
+   "amaze"
+  ],
+  [
+   "amazing",
+   "amaze"
+  ],
+  [
+   "annoyed",
+   "annoy"
+  ],
+  [
+   "annoying",
+   "annoy"
+  ],
+  [
+   "appealing",
+   "appeal"
+  ],
+  [
+   "automated",
+   "automate"
+  ],
+  [
+   "bewildering",
+   "bewilder"
+  ],
+  [
+   "bored",
+   "bore"
+  ],
+  [
+   "boring",
+   "bore"
+  ],
+  [
+   "challenging",
+   "challenge"
+  ],
+  [
+   "charming",
+   "charm"
+  ],
+  [
+   "complicated",
+   "complicate"
+  ],
+  [
+   "concerned",
+   "concern"
+  ],
+  [
+   "confused",
+   "confuse"
+  ],
+  [
+   "confusing",
+   "confuse"
+  ],
+  [
+   "convinced",
+   "convince"
+  ],
+  [
+   "crowded",
+   "crowd"
+  ],
+  [
+   "damaging",
+   "damage"
+  ],
+  [
+   "delighted",
+   "delight"
+  ],
+  [
+   "demanding",
+   "demand"
+  ],
+  [
+   "depressed",
+   "depress"
+  ],
+  [
+   "depressing",
+   "depress"
+  ],
+  [
+   "determined",
+   "determine"
+  ],
+  [
+   "disabled",
+   "disable"
+  ],
+  [
+   "disappointed",
+   "disappoint"
+  ],
+  [
+   "disappointing",
+   "disappoint"
+  ],
+  [
+   "disturbing",
+   "disturb"
+  ],
+  [
+   "divorced",
+   "divorce"
+  ],
+  [
+   "embarrassed",
+   "embarrass"
+  ],
+  [
+   "embarrassing",
+   "embarrass"
+  ],
+  [
+   "endangered",
+   "endanger"
+  ],
+  [
+   "entitled",
+   "entitle"
+  ],
+  [
+   "excited",
+   "excite"
+  ],
+  [
+   "exciting",
+   "excite"
+  ],
+  [
+   "exhausted",
+   "exhaust"
+  ],
+  [
+   "exhausting",
+   "exhaust"
+  ],
+  [
+   "experienced",
+   "experience"
+  ],
+  [
+   "fascinated",
+   "fascinate"
+  ],
+  [
+   "fascinating",
+   "fascinate"
+  ],
+  [
+   "fried",
+   "fry"
+  ],
+  [
+   "frightened",
+   "frighten"
+  ],
+  [
+   "frightening",
+   "frighten"
+  ],
+  [
+   "frustrated",
+   "frustrate"
+  ],
+  [
+   "frustrating",
+   "frustrate"
+  ],
+  [
+   "inclined",
+   "incline"
+  ],
+  [
+   "inspired",
+   "inspire"
+  ],
+  [
+   "inspiring",
+   "inspire"
+  ],
+  [
+   "interested",
+   "interest"
+  ],
+  [
+   "interesting",
+   "interest"
+  ],
+  [
+   "lasting",
+   "last"
+  ],
+  [
+   "limited",
+   "limit"
+  ],
+  [
+   "misguided",
+   "misguide"
+  ],
+  [
+   "misleading",
+   "mislead"
+  ],
+  [
+   "overwhelming",
+   "overwhelm"
+  ],
+  [
+   "pleased",
+   "please"
+  ],
+  [
+   "pleasing",
+   "please"
+  ],
+  [
+   "preoccupied",
+   "preoccupy"
+  ],
+  [
+   "promising",
+   "promise"
+  ],
+  [
+   "protracted",
+   "protract"
+  ],
+  [
+   "puzzling",
+   "puzzle"
+  ],
+  [
+   "relaxed",
+   "relax"
+  ],
+  [
+   "relaxing",
+   "relax"
+  ],
+  [
+   "rewarding",
+   "reward"
+  ],
+  [
+   "satisfied",
+   "satisfy"
+  ],
+  [
+   "satisfying",
+   "satisfy"
+  ],
+  [
+   "scared",
+   "scare"
+  ],
+  [
+   "shocked",
+   "shock"
+  ],
+  [
+   "shocking",
+   "shock"
+  ],
+  [
+   "sophisticated",
+   "sophisticate"
+  ],
+  [
+   "stunning",
+   "stun"
+  ],
+  [
+   "supposed",
+   "suppose"
+  ],
+  [
+   "surprised",
+   "surprise"
+  ],
+  [
+   "surprising",
+   "surprise"
+  ],
+  [
+   "terrified",
+   "terrify"
+  ],
+  [
+   "terrifying",
+   "terrify"
+  ],
+  [
+   "thrilled",
+   "thrill"
+  ],
+  [
+   "tired",
+   "tire"
+  ],
+  [
+   "tiring",
+   "tire"
+  ],
+  [
+   "unbalanced",
+   "unbalance"
+  ],
+  [
+   "underlying",
+   "underlie"
+  ],
+  [
+   "unified",
+   "unify"
+  ],
+  [
+   "united",
+   "unite"
+  ],
+  [
+   "waterlogged",
+   "waterlog"
+  ],
+  [
+   "worried",
+   "worry"
+  ],
+  [
+   "worrying",
+   "worry"
+  ]
+ ]
 }

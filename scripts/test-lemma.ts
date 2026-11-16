@@ -2,7 +2,7 @@
 // Builds a mini dictionary for the tested words (like the real build does) and resolves each clicked form.
 //   cases            [form, expected lemma]
 //   ambiguous        words that are both an inflected form AND have their own entry (PRD C5, need >= 30)
-//   lexicalizedIng   every word in the override file's lexicalizedIng list must be its own lemma (verb folded as `alt`)
+//   lexicalizedIng / lexicalizedAdj   every word in these override lists must be its own lemma (verb folded as `alt`)
 //   hyphen           hyphenated words: whole ECDICT headword stays whole, otherwise the card lists the parts in order
 //   verbalIng        -ing words that must keep resolving to the verb (running -> run, going -> go, ...)
 import { readFileSync } from 'node:fs';
@@ -16,18 +16,18 @@ const db = loadDb(await ensureEcdict());
 
 const basic: [string, string][] = cfg.cases;
 const amb: [string, string][] = cfg.ambiguous.cases;
-const lexExpect: [string, string][] = cfg.lexicalizedIngCases; // [word, expected folded verb lemma or ""]
+const lexExpect: [string, string][] = [...cfg.lexicalizedIngCases, ...cfg.lexicalizedAdjCases]; // [word, expected folded verb lemma or ""]
 const verbal: [string, string][] = cfg.verbalIng;
 const hyphen: [string, string, [string, string][] | null][] = cfg.hyphen.cases;
 
 const forms: Record<string, string> = {};
 const entries: Record<string, { alt?: string; parts?: { w: string; l: string }[] }> = {};
-const words = [...basic, ...amb, ...verbal].map(([w]) => w).concat([...ov.lexicalizedIng], lexExpect.map(([w]) => w));
+const words = [...basic, ...amb, ...verbal].map(([w]) => w).concat([...ov.lexicalized], lexExpect.map(([w]) => w));
 for (const w of words) {
   const r = resolveForBuild(w, db, ov);
   if (!r) continue;
   entries[r.lemma] = {};
-  if (ov.lexicalizedIng.has(r.lemma)) {
+  if (ov.lexicalized.has(r.lemma)) {
     const alt = lexAlt(db, r.lemma);
     if (alt && alt !== r.lemma) {
       entries[r.lemma] = { alt };
@@ -65,6 +65,7 @@ for (const [f, l] of basic) expect(f, l, 'basic');
 for (const [f, l] of amb) expect(f, l, 'ambiguous');
 for (const [f, l] of verbal) expect(f, l, 'verbal -ing');
 for (const w of ov.lexicalizedIng) expect(w, w, 'lexicalized -ing');
+for (const w of ov.lexicalizedAdj) expect(w, w, 'lexicalized adjective participle');
 for (const [w, alt] of lexExpect) {
   n++;
   const got = entries[w]?.alt ?? '';
@@ -93,7 +94,7 @@ for (const [form, lemma] of amb) {
   if (form !== lemma && row && hasOwnMeaning(row)) ownEntries++;
 }
 const total = basic.length;
-console.log(`lemma cases: ${n - fail}/${n} passed (basic ${total}, ambiguous ${amb.length}, lexicalized -ing ${ov.lexicalizedIng.size}+${lexExpect.length} alt checks, verbal -ing ${verbal.length}, hyphen ${hyphen.length}x2); ambiguous words with own collapsible entry: ${ownEntries}`);
+console.log(`lemma cases: ${n - fail}/${n} passed (basic ${total}, ambiguous ${amb.length}, lexicalized -ing ${ov.lexicalizedIng.size}, adjectival participles ${ov.lexicalizedAdj.size}, ${lexExpect.length} alt checks, verbal -ing ${verbal.length}, hyphen ${hyphen.length}x2); ambiguous words with own collapsible entry: ${ownEntries}`);
 if (total < 200) {
   console.log(`  ✗ need >= 200 basic cases, have ${total}`);
   fail++;

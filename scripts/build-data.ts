@@ -148,7 +148,7 @@ for (const lv of LEVELS) {
 // lexicalized -ing nouns: the verb lemma entry is folded under the noun card, so it must ship too
 const altOf = new Map<string, string>();
 for (const key of [...usedKeys]) {
-  if (ov.lexicalizedIng.has(key)) {
+  if (ov.lexicalized.has(key)) {
     const alt = lexAlt(db, key);
     if (alt && alt !== key) {
       altOf.set(key, alt);
@@ -257,7 +257,7 @@ for (const [key, rec] of seen) {
     const listed = lrow?.exchange ? Object.values(parseExchange(lrow.exchange)).some((v) => v.toLowerCase() === key) : false;
     if (!listed) push('lemma-does-not-list-form', `"${res.lemma}" does not list "${key}" among its forms in ECDICT (own '0:' link only)`, fixLemma(key, res.lemma) + ' (confirm) or ' + fixLemma(key, key));
     if (row && hasOwnMeaning(row) && rank(key) < rank(res.lemma)) push('form-more-common-than-lemma', `"${key}" has its own meaning and is more frequent (rank ${rank(key)}) than "${res.lemma}" (rank ${rank(res.lemma)})`, fixLemma(key, key));
-    if (key.endsWith('ing') && row && hasNounSense(row.translation) && rank(key) < 5000 && !ov.lexicalizedIng.has(key)) push('lexicalized-ing-candidate', `"-ing" form with its own noun/adjective meaning; currently shows "${res.lemma}"`, `"lexicalizedIng": [ …, "${key}" ]`);
+    if (key.endsWith('ing') && row && hasNounSense(row.translation) && rank(key) < 5000 && !ov.lexicalized.has(key)) push('lexicalized-ing-candidate', `"-ing" form with its own noun/adjective meaning; currently shows "${res.lemma}"`, `"lexicalizedIng": [ …, "${key}" ]`);
   }
   if (res.via === 'normal' && key === res.lemma && !row) push('no-row', 'resolved without a dictionary row');
   const lv = cefr[res.lemma] ?? cefr[key];

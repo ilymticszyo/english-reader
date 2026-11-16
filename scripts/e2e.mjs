@@ -38,7 +38,7 @@ async function newPage(opts = {}) {
   page.errors = errors;
   return page;
 }
-const PER = 25; // articles per level in the current content batch
+const PER = 50; // articles per level in the current content batch
 const word = (page, text, nth = 0) => page.locator('.article-body .w', { hasText: new RegExp(`^${text}$`) }).nth(nth);
 const cardTitle = async (page) => (await page.locator('.card .card-title').innerText()).replace(/\s+/g, ' ').trim();
 const lum = (rgb) => {
@@ -197,7 +197,7 @@ try {
   await page.goto(url + '#/read/b1-001');
   await page.waitForSelector('.article-nav');
   check('first article: "previous" disabled', (await page.locator('.article-nav .btn.disabled').innerText()).includes('上一篇'));
-  await page.goto(url + `#/read/b1-${PER}`.replace('b1-25', 'b1-025'));
+  await page.goto(url + `#/read/b1-${String(PER).padStart(3, '0')}`);
   await page.waitForSelector('.article-nav');
   check('last article: "next" disabled', (await page.locator('.article-nav .btn.disabled').innerText()).includes('下一篇'));
   check('no console errors in reader flows', page.errors.length === 0, page.errors.join('; '));
@@ -389,7 +389,7 @@ try {
   check('scrolling to the end marks article read', await page.evaluate(() => JSON.parse(localStorage.getItem('ra:v1:progress'))['b2-005'].status === 'read'));
   await page.goto(url + '#/');
   await page.click('.tab[data-level="B2"]');
-  check('list shows 已读 status and level progress 1/25', (await page.locator('.card-item[data-id="b2-005"] .st-read').count()) === 1 && /1 \/ 25/.test(await page.locator('.progress-line').innerText()), await page.locator('.progress-line').innerText());
+  check('list shows 已读 status and level progress 1/50', (await page.locator('.card-item[data-id="b2-005"] .st-read').count()) === 1 && /1 \/ 50/.test(await page.locator('.progress-line').innerText()), await page.locator('.progress-line').innerText());
   await page.selectOption('select[aria-label="按阅读状态筛选"]', 'read');
   check('status filter (已读)', (await page.locator('.card-item').count()) === 1);
   await page.context().close();
@@ -495,6 +495,29 @@ try {
   await word(page, 'feeling').first().click();
   check('"feeling" → own entry with "feel" folded', (await cardTitle(page)) === 'feeling' && (await page.locator('.card details.card-alt').count()) === 1);
   await page.keyboard.press('Escape');
+  // M3 batch 2: lexicalized adjectival participles (whitelist in lemma-overrides.json → lexicalizedAdj)
+  await page.goto(url + '#/read/b2-012');
+  await page.waitForSelector('.article-body .w');
+  await word(page, 'scared').first().click();
+  check('"scared" (whitelisted adjective) → main card is its own entry, no "←"', (await cardTitle(page)) === 'scared', await cardTitle(page));
+  check('"scared": verb "scare" entry folded below (closed)', (await page.locator('.card details.card-alt').count()) === 1 && (await page.locator('.card details.card-alt[open]').count()) === 0 && /动词「scare」的词条/.test(await page.locator('.card details.card-alt summary').innerText()), await page.locator('.card details.card-alt summary').allInnerTexts().then((a) => a.join('|')));
+  check('"scared" own definition is the adjective sense (害怕的)', /害怕|恐惧|惊恐/.test(await page.locator('.card > .card-defs').innerText()), await page.locator('.card > .card-defs').innerText());
+  await page.locator('.card details.card-alt summary').click();
+  check('expanding "scared" shows the verb entry (吓)', /吓|惊吓|使.*害怕/.test(await page.locator('.card details.card-alt').innerText()));
+  check('vocab keyed by "scared" (not "scare")', await page.evaluate(() => 'scared' in JSON.parse(localStorage.getItem('ra:v1:vocab')) && !('scare' in JSON.parse(localStorage.getItem('ra:v1:vocab')))));
+  await page.keyboard.press('Escape');
+  await page.goto(url + '#/read/b2-005');
+  await page.waitForSelector('.article-body .w');
+  await word(page, 'running').first().click();
+  check('adjective whitelist leaves verbal "running" untouched (running ← run)', /^running ← run（/.test(await cardTitle(page)), await cardTitle(page));
+  await page.keyboard.press('Escape');
+  await page.goto(url + '#/read/b1-029');
+  await page.waitForSelector('.article-body .w');
+  const wl = await page.evaluate(async () => {
+    const r = Object.assign({}, ...(await Promise.all(['b1', 'b2', 'c1'].map((l) => fetch(`data/dict/entries-${l}.json`).then((x) => x.json())))));
+    return Object.fromEntries(['tired', 'surprised', 'interested', 'worried', 'complicated', 'boring'].map((k) => [k, r[k] ? (r[k].alt || '') : null]));
+  });
+  check('built B1 dictionary: whitelisted participles have own entries with folded verb', wl.tired === 'tire' && wl.surprised === 'surprise' && wl.boring === 'bore', JSON.stringify(wl));
   check('no console errors', page.errors.length === 0, page.errors.join('; '));
 
   section('M2: labels, about page, reading speed');

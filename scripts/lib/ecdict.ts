@@ -96,14 +96,21 @@ const rank = (r?: Row) => (r ? (r.frq > 0 ? r.frq : r.bnc > 0 ? r.bnc : 1e9) : 1
 export interface Overrides {
   /** form -> lemma (same word = own lemma) */
   lemma: Record<string, string>;
+  /** lexicalized -ing nouns (building, meeting …) */
   lexicalizedIng: Set<string>;
+  /** adjectival participles whose adjective sense dominates (tired, scared, boring, complicated …) */
+  lexicalizedAdj: Set<string>;
+  /** both lists: words that are their own lemma, with the verb lemma entry folded below */
+  lexicalized: Set<string>;
   /** names / terms missing from ECDICT: key as written -> Chinese note */
   terms: Record<string, string>;
 }
 
 export function loadOverrides(): Overrides {
   const o = JSON.parse(readFileSync(resolve(ROOT, 'content/lemma-overrides.json'), 'utf8'));
-  return { lemma: o.lemma ?? {}, lexicalizedIng: new Set<string>(o.lexicalizedIng ?? []), terms: o.terms ?? {} };
+  const ing = new Set<string>(o.lexicalizedIng ?? []);
+  const adj = new Set<string>(o.lexicalizedAdj ?? []);
+  return { lemma: o.lemma ?? {}, lexicalizedIng: ing, lexicalizedAdj: adj, lexicalized: new Set<string>([...ing, ...adj]), terms: o.terms ?? {} };
 }
 
 /** Raw ECDICT-based candidate lemmas for a word form (primary first); empty = the word is its own lemma. */
@@ -124,11 +131,11 @@ const has = (o: object, k: string) => Object.prototype.hasOwnProperty.call(o, k)
 /** Candidate lemmas after manual overrides (lemma map, lexicalized -ing nouns). Empty = own lemma. */
 export function lemmasOf(db: Db, form: string, ov: Overrides): string[] {
   if (has(ov.lemma, form)) return ov.lemma[form] === form ? [] : [ov.lemma[form]];
-  if (ov.lexicalizedIng.has(form)) return [];
+  if (ov.lexicalized.has(form)) return [];
   return rawLemmas(db, form);
 }
 
-/** For a lexicalized -ing noun: the verb lemma that is folded below the noun card (if ECDICT has one). */
+/** For a lexicalized -ing noun / adjectival participle: the verb lemma that is folded below the noun card (if ECDICT has one). */
 export function lexAlt(db: Db, key: string): string | undefined {
   return rawLemmas(db, key)[0];
 }
@@ -239,7 +246,7 @@ export function resolveForBuild(token: string, db: Db, ov: Overrides): BuildRes 
     if (has(ov.terms, c)) return { key: c, lemma: c, kind: 'proper', via: 'term' };
     const lc = c.toLowerCase();
     const lem = lemmasOf(db, lc, ov);
-    const via = has(ov.lemma, lc) ? 'override' : ov.lexicalizedIng.has(lc) ? 'lexicalized' : 'normal';
+    const via = has(ov.lemma, lc) ? 'override' : ov.lexicalized.has(lc) ? 'lexicalized' : 'normal';
     if (lem.length) return { key: lc, lemma: lem[0], kind: 'dict', via };
     if (db.rows.has(lc)) return { key: lc, lemma: lc, kind: 'dict', via };
   }
