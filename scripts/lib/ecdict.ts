@@ -100,7 +100,9 @@ export interface Overrides {
   lexicalizedIng: Set<string>;
   /** adjectival participles whose adjective sense dominates (tired, scared, boring, complicated …) */
   lexicalizedAdj: Set<string>;
-  /** both lists: words that are their own lemma, with the verb lemma entry folded below */
+  /** other word forms that should show their own entry first (fireworks, scissors, phonics, born, later): same treatment as the two lists above */
+  formSelfFirst: Set<string>;
+  /** all three lists: words that are their own lemma, with the lemma entry folded below */
   lexicalized: Set<string>;
   /** names / terms missing from ECDICT: key as written -> Chinese note */
   terms: Record<string, string>;
@@ -114,7 +116,8 @@ export function loadOverrides(): Overrides {
   const o = JSON.parse(readFileSync(resolve(ROOT, 'content/lemma-overrides.json'), 'utf8'));
   const ing = new Set<string>(o.lexicalizedIng ?? []);
   const adj = new Set<string>(o.lexicalizedAdj ?? []);
-  return { lemma: o.lemma ?? {}, lexicalizedIng: ing, lexicalizedAdj: adj, lexicalized: new Set<string>([...ing, ...adj]), terms: o.terms ?? {}, cefr: o.cefr ?? {}, leadDefs: o.leadDefs ?? {} };
+  const fsf = new Set<string>(o.formSelfFirst ?? []);
+  return { lemma: o.lemma ?? {}, lexicalizedIng: ing, lexicalizedAdj: adj, formSelfFirst: fsf, lexicalized: new Set<string>([...ing, ...adj, ...fsf]), terms: o.terms ?? {}, cefr: o.cefr ?? {}, leadDefs: o.leadDefs ?? {} };
 }
 
 /** Raw ECDICT-based candidate lemmas for a word form (primary first); empty = the word is its own lemma. */

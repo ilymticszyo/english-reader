@@ -47,11 +47,12 @@ npm run screenshots
    - **lexicalized-ing-candidate**：有独立名词义、但目前还显示动词的 -ing 词 → 如果名词义才是常用义，加进 `lexicalizedIng`。
    - **hyphen**（仅供参考）：连字符词 ECDICT 没有整词时，卡片会按顺序列出每个组成部分的释义（如 well-explained → well + explain）；整词在 ECDICT 里就直接显示整词。只有当一句合并释义明显更好时才加进 `terms`。某个部分查不到释义会报 `NO DEFINITION`（构建失败）。
    - **no-cefr**：词元不在 CEFR 词表里（只影响覆盖率统计）。
-4. 所有人工修正只改一个文件：`content/lemma-overrides.json`，四个区块：
+4. 所有人工修正只改一个文件：`content/lemma-overrides.json`，区块有 `lemma / lexicalizedIng / lexicalizedAdj / formSelfFirst / cefr / leadDefs / terms`：
    - `lemma`：`{"number": "number", "are": "be"}`——形 → 词元（写成自己表示“它自己就是词元”）。
    - `lexicalizedIng`：词汇化的 -ing 名词（building、meeting、morning、feeling、painting、wedding、ceiling…）。这些词主卡显示它自己的词条，动词词元（build）的词条折叠在下方。**不在这个名单里的 -ing 词保持原行为（running → run）**；不做上下文词性判断。
    - `lexicalizedAdj`：词汇化的形容词性分词（tired、scared、boring、interested、excited、surprised、worried、complicated、amazing…）。机制与 `lexicalizedIng` 相同：主卡显示这个词自己的（形容词）词条，动词词元（scare）的词条折叠在下方，生词本以这个词本身为键；覆盖率按这个词自己的 CEFR 等级算。只收“形容词义明显占主导”的词；动词性分词（written、given、closed…）和 -ing 动名词（running…）不在其中，保持原行为。
-   - `cefr`：人工指定的 CEFR 等级（如 `"according": "B1"`），优先于词表。**回退规则**：词汇化词（`lexicalizedIng` / `lexicalizedAdj`）如果自己没有 CEFR 等级，覆盖率和词条徽章回退使用它的动词词元的等级（如 disappointed → disappoint）。
+   - `formSelfFirst`：**词形自己的词条优先**的特例词（目前 fireworks、phonics、scissors、born、later）。这些词的“词形”本身就有独立词条，且比词元（firework、phonic、scissor、bear、late）更常用或意思不同：主卡先显示词形自己的词条，词元的词条折叠在下方，生词本以词形本身为键；CEFR 如果词形自己没有就回退到词元。**以后遇到类似的词（构建报告里的 `form-more-common-than-lemma`，例如 bacteria、crooked 等）就加进这里**，并在 `tests/lemma-cases.json` 的 `formSelfFirstCases` 补一条用例（`npm run test:lemma` 会检查每个词都满足上述行为）。与 `lexicalizedIng/Adj` 在机制上一致，只是用途不同，三个名单内部合并处理。
+   - `cefr`：人工指定的 CEFR 等级（如 `"according": "B1"`），优先于词表。**回退规则**：词汇化词（`lexicalizedIng` / `lexicalizedAdj` / `formSelfFirst`）如果自己没有 CEFR 等级，覆盖率和词条徽章回退使用它的动词词元的等级（如 disappointed → disappoint）。
    - `leadDefs`：给某个词条在最前面加一条释义（如 according 先显示“according to：根据…”，再显示动词 accord 的折叠词条）。
    - `terms`：ECDICT 没有的专名、生造或专业术语 → 一句中文释义。
 5. 改完重新 `npm run build`，再 `npm run test:lemma`。有新的易错词就补进 `tests/lemma-cases.json`。
@@ -61,7 +62,7 @@ npm run screenshots
 ```
 content/
   articles/*.md           文章源文件（frontmatter + 正文，段落以空行分隔）
-  lemma-overrides.json    所有人工修正的唯一入口：lemma / lexicalizedIng / lexicalizedAdj / cefr / leadDefs / terms
+  lemma-overrides.json    所有人工修正的唯一入口：lemma / lexicalizedIng / lexicalizedAdj / formSelfFirst / cefr / leadDefs / terms
 data-src/
   ecdict.csv              （gitignore，自动下载）
   cefr/                   CEFR-J 词表 + Octanove C1/C2 词表（用于词的 CEFR 等级）

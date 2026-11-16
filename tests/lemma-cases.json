@@ -1206,10 +1206,6 @@
     "advance"
    ],
    [
-    "born",
-    "bear"
-   ],
-   [
     "broken",
     "break"
    ],
@@ -1355,6 +1351,38 @@
   [
    "scaffolding",
    "scaffold"
+  ],
+  [
+   "hearing",
+   "hear"
+  ],
+  [
+   "ruling",
+   "rule"
+  ],
+  [
+   "skiing",
+   "ski"
+  ],
+  [
+   "following",
+   "follow"
+  ],
+  [
+   "spending",
+   "spend"
+  ],
+  [
+   "smoking",
+   "smoke"
+  ],
+  [
+   "breathing",
+   "breathe"
+  ],
+  [
+   "burning",
+   "burn"
   ]
  ],
  "verbalIng": [
@@ -1417,10 +1445,6 @@
   [
    "sleeping",
    "sleep"
-  ],
-  [
-   "spending",
-   "spend"
   ],
   [
    "testing",
@@ -1950,6 +1974,74 @@
   [
    "according",
    "accord"
+  ],
+  [
+   "astonishing",
+   "astonish"
+  ],
+  [
+   "cramped",
+   "cramp"
+  ],
+  [
+   "dissatisfied",
+   "dissatisfy"
+  ],
+  [
+   "entrenched",
+   "entrench"
+  ],
+  [
+   "overgrown",
+   "overgrow"
+  ],
+  [
+   "personalised",
+   "personalise"
+  ],
+  [
+   "mechanised",
+   "mechanise"
+  ],
+  [
+   "practised",
+   "practise"
+  ],
+  [
+   "devastating",
+   "devastate"
+  ],
+  [
+   "dignified",
+   "dignify"
+  ],
+  [
+   "impoverished",
+   "impoverish"
+  ],
+  [
+   "congested",
+   "congest"
+  ],
+  [
+   "obsessed",
+   "obsess"
+  ],
+  [
+   "sprawling",
+   "sprawl"
+  ],
+  [
+   "demeaning",
+   "demean"
+  ],
+  [
+   "inexperienced",
+   "inexperience"
+  ],
+  [
+   "outgoing",
+   "outgo"
   ]
  ],
  "tokenizer": [
@@ -2060,6 +2152,22 @@
    [
     "automated",
     "automate"
+   ],
+   [
+    "born",
+    "bear"
+   ],
+   [
+    "fireworks",
+    "firework"
+   ],
+   [
+    "breathing",
+    "breathe"
+   ],
+   [
+    "practised",
+    "practise"
    ]
   ],
   "leadDefs": [
@@ -2069,5 +2177,27 @@
     "根据"
    ]
   ]
- }
+ },
+ "formSelfFirstCases": [
+  [
+   "fireworks",
+   "firework"
+  ],
+  [
+   "scissors",
+   "scissor"
+  ],
+  [
+   "phonics",
+   "phonic"
+  ],
+  [
+   "born",
+   "bear"
+  ],
+  [
+   "later",
+   "late"
+  ]
+ ]
 }

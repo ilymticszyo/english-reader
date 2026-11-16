@@ -3,6 +3,7 @@
 //   cases            [form, expected lemma]
 //   ambiguous        words that are both an inflected form AND have their own entry (PRD C5, need >= 30)
 //   lexicalizedIng / lexicalizedAdj   every word in these override lists must be its own lemma (verb folded as `alt`)
+//   formSelfFirst  every word in this list is its own lemma too (lemma folded as `alt`, CEFR falls back to the lemma's)
 //   hyphen           hyphenated words: whole ECDICT headword stays whole, otherwise the card lists the parts in order
 //   verbalIng        -ing words that must keep resolving to the verb (running -> run, going -> go, ...)
 import { readFileSync } from 'node:fs';
@@ -16,7 +17,7 @@ const db = loadDb(await ensureEcdict());
 
 const basic: [string, string][] = cfg.cases;
 const amb: [string, string][] = cfg.ambiguous.cases;
-const lexExpect: [string, string][] = [...cfg.lexicalizedIngCases, ...cfg.lexicalizedAdjCases]; // [word, expected folded verb lemma or ""]
+const lexExpect: [string, string][] = [...cfg.lexicalizedIngCases, ...cfg.lexicalizedAdjCases, ...cfg.formSelfFirstCases]; // [word, expected folded verb lemma or ""]
 const verbal: [string, string][] = cfg.verbalIng;
 const hyphen: [string, string, [string, string][] | null][] = cfg.hyphen.cases;
 
@@ -66,6 +67,7 @@ for (const [f, l] of amb) expect(f, l, 'ambiguous');
 for (const [f, l] of verbal) expect(f, l, 'verbal -ing');
 for (const w of ov.lexicalizedIng) expect(w, w, 'lexicalized -ing');
 for (const w of ov.lexicalizedAdj) expect(w, w, 'lexicalized adjective participle');
+for (const w of ov.formSelfFirst) expect(w, w, 'form-self-first');
 for (const [w, alt] of lexExpect) {
   n++;
   const got = entries[w]?.alt ?? '';
@@ -122,7 +124,7 @@ for (const [form, lemma] of amb) {
   if (form !== lemma && row && hasOwnMeaning(row)) ownEntries++;
 }
 const total = basic.length;
-console.log(`lemma cases: ${n - fail}/${n} passed (basic ${total}, ambiguous ${amb.length}, lexicalized -ing ${ov.lexicalizedIng.size}, adjectival participles ${ov.lexicalizedAdj.size}, ${lexExpect.length} alt checks, verbal -ing ${verbal.length}, hyphen ${hyphen.length}x2, tokenizer ${tokCases.length}, cefr ${cfg.cefr.manual.length + cfg.cefr.fallback.length + cfg.cefr.leadDefs.length}); ambiguous words with own collapsible entry: ${ownEntries}`);
+console.log(`lemma cases: ${n - fail}/${n} passed (basic ${total}, ambiguous ${amb.length}, lexicalized -ing ${ov.lexicalizedIng.size}, adjectival participles ${ov.lexicalizedAdj.size}, form-self-first ${ov.formSelfFirst.size}, ${lexExpect.length} alt checks, verbal -ing ${verbal.length}, hyphen ${hyphen.length}x2, tokenizer ${tokCases.length}, cefr ${cfg.cefr.manual.length + cfg.cefr.fallback.length + cfg.cefr.leadDefs.length}); ambiguous words with own collapsible entry: ${ownEntries}`);
 if (total < 200) {
   console.log(`  ✗ need >= 200 basic cases, have ${total}`);
   fail++;

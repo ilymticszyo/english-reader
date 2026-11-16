@@ -259,7 +259,7 @@ for (const [key, rec] of seen) {
     const lrow = db.rows.get(res.lemma);
     const listed = lrow?.exchange ? Object.values(parseExchange(lrow.exchange)).some((v) => v.toLowerCase() === key) : false;
     if (!listed) push('lemma-does-not-list-form', `"${res.lemma}" does not list "${key}" among its forms in ECDICT (own '0:' link only)`, fixLemma(key, res.lemma) + ' (confirm) or ' + fixLemma(key, key));
-    if (row && hasOwnMeaning(row) && rank(key) < rank(res.lemma)) push('form-more-common-than-lemma', `"${key}" has its own meaning and is more frequent (rank ${rank(key)}) than "${res.lemma}" (rank ${rank(res.lemma)})`, fixLemma(key, key));
+    if (row && hasOwnMeaning(row) && rank(key) < rank(res.lemma)) push('form-more-common-than-lemma', `"${key}" has its own meaning and is more frequent (rank ${rank(key)}) than "${res.lemma}" (rank ${rank(res.lemma)})`, `"formSelfFirst": [ …, "${key}" ]  (own entry first, lemma folded below; for an adjectival participle use "lexicalizedAdj")  or ` + fixLemma(key, key));
     if (key.endsWith('ing') && row && hasNounSense(row.translation) && rank(key) < 5000 && !ov.lexicalized.has(key)) push('lexicalized-ing-candidate', `"-ing" form with its own noun/adjective meaning; currently shows "${res.lemma}"`, `"lexicalizedIng": [ …, "${key}" ]`);
   }
   if (res.via === 'normal' && key === res.lemma && !row) push('no-row', 'resolved without a dictionary row');
@@ -277,7 +277,7 @@ const KIND_HELP: Record<string, string> = {
   hyphen: 'Hyphenated words missing from ECDICT as a whole. Informational: the card lists each part\'s definition in order. Add to "terms" only when a single combined gloss is clearly better.',
   ambiguous: 'ECDICT lists several possible lemmas. The first (most frequent) is used. Override if the other is more natural.',
   'lemma-does-not-list-form': 'Lemma link exists only on the form\'s own row. Usually fine; check unusual ones.',
-  'form-more-common-than-lemma': 'The clicked form is more frequent than its claimed lemma and has its own meaning (e.g. number→numb). Likely wrong lemma: override to itself.',
+  'form-more-common-than-lemma': 'The clicked form is more frequent than its claimed lemma and has its own meaning (e.g. number→numb). Add to "formSelfFirst" (any form) or "lexicalizedAdj" (adjectival participle) so the form shows its own entry first with the lemma folded below; or override the lemma to itself.',
   'lexicalized-ing-candidate': '-ing words with their own meaning that currently show the verb. Add to "lexicalizedIng" if the noun/adjective sense is the common one.',
   'no-cefr': 'Lemmas missing from the CEFR lists. Informational; they count as off-level.',
   'no-row': 'Internal: resolved without a dictionary row.',
