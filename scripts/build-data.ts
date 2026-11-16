@@ -46,6 +46,8 @@ interface Tok {
   text: string;
   res: BuildRes | null;
 }
+/** hyphenated words missing from ECDICT -> their parts */
+const compounds = new Map<string, { w: string; l: string }[]>();
 const perArticleTokens = new Map<string, Tok[]>();
 /** token (lowercase key) -> where it occurs + how it was resolved */
 const seen = new Map<string, { res: BuildRes; articles: Set<string>; samples: Set<string> }>();
@@ -86,6 +88,19 @@ for (const s of sources) {
     const { key, lemma, kind } = t.res;
     noteLevel(lemma, level);
     usedKeys.add(lemma);
+    for (const p of t.res.parts ?? []) {
+      compounds.set(key, t.res.parts!);
+      noteLevel(p.l, level);
+      usedKeys.add(p.l);
+      if (p.w !== p.l) {
+        forms[p.w] = p.l;
+        const prow = db.rows.get(p.w);
+        if (prow && hasOwnMeaning(prow)) {
+          usedKeys.add(p.w);
+          noteLevel(p.w, level);
+        }
+      }
+    }
     if (kind === 'dict' && key !== lemma) {
       forms[key] = lemma;
       const row = db.rows.get(key);
@@ -150,6 +165,8 @@ for (const key of [...usedKeys].sort()) {
   let entry: DictEntry;
   if (Object.prototype.hasOwnProperty.call(ov.terms, key)) {
     entry = { d: [{ pos: '', zh: ov.terms[key] }], proper: true };
+  } else if (compounds.has(key)) {
+    entry = { d: [], parts: compounds.get(key)! };
   } else {
     const row = db.rows.get(key);
     if (!row) {
@@ -168,6 +185,7 @@ for (const k of Object.keys(forms).sort()) formsOut[k] = forms[k];
 
 // ---------- verify with the runtime resolver (same code as the browser) + coverage ----------
 const view = viewOf(formsOut, allEntries);
+const offAll = new Map<string, string[]>();
 for (const a of articles) {
   const toks = perArticleTokens.get(a.id)!;
   let covered = 0;
@@ -182,10 +200,25 @@ for (const a of articles) {
     if (r.lemma !== t.res!.lemma) err(`${a.id}: resolver mismatch for "${t.text}": build=${t.res!.lemma} runtime=${r.lemma}`);
     if (t.res!.kind === 'proper') continue;
     total++;
-    const lv = cefr[r.lemma] ?? cefr[r.key] ?? cefr[t.text.toLowerCase()];
-    if (lv && LEVEL_RANK[lv] <= LEVEL_RANK[a.level]) covered++;
-    else off.set(r.lemma, lv ?? '?');
+    const ok = (lemma: string, ...words: string[]) => {
+      const lv = cefr[lemma] ?? words.map((w) => cefr[w]).find(Boolean);
+      if (lv && LEVEL_RANK[lv] <= LEVEL_RANK[a.level]) return true;
+      off.set(lemma, lv ?? '?');
+      return false;
+    };
+    // a hyphenated word that ECDICT lacks counts as covered only if every part is
+    if (t.res!.parts) {
+      if (t.res!.parts.map((p) => ok(p.l, p.w)).every(Boolean)) covered++;
+    } else if (t.text.includes('-')) {
+      // hyphenated word that ECDICT has as a whole but CEFR lists do not: covered if the whole or every part is
+      const wholeLv = cefr[r.lemma] ?? cefr[r.key];
+      const partRes = t.text.toLowerCase().split('-').filter(Boolean).map((w) => resolveForBuild(w, db, ov));
+      if (wholeLv && LEVEL_RANK[wholeLv] <= LEVEL_RANK[a.level]) covered++;
+      else if (partRes.every((x) => x && (cefr[x.lemma] ?? cefr[x.key]) && LEVEL_RANK[(cefr[x.lemma] ?? cefr[x.key])!] <= LEVEL_RANK[a.level])) covered++;
+      else partRes.forEach((x) => x && ok(x.lemma, x.key));
+    } else if (ok(r.lemma, r.key, t.text.toLowerCase())) covered++;
   }
+  offAll.set(a.id, [...off.entries()].map(([w, l]) => `${w}:${l}`));
   a.meta.stats.coverageAtLevel = Math.round((covered / Math.max(1, total)) * 1000) / 1000;
   a.meta.stats.offLevelWords = [...off.entries()].sort((x, y) => (LEVEL_RANK[y[1]] ?? 9) - (LEVEL_RANK[x[1]] ?? 9)).map(([w]) => w).slice(0, 20);
   const need = cfg.levels[a.level].coverage;
@@ -216,7 +249,7 @@ for (const [key, rec] of seen) {
   if (res.kind === 'proper') continue;
   const row = db.rows.get(key);
   if (res.via === 'fallback') push('fallback', `not in ECDICT as a form; guessed lemma "${res.lemma}" by suffix rules`, fixLemma(key, res.lemma) + `   (or add to "terms" if it is a name)`);
-  if (res.via === 'hyphen-part') push('hyphen', `hyphenated token(s) ${[...rec.samples].join(', ')} not in ECDICT as a whole; the card shows the part "${res.key}"`, `"terms": { "${key}": "…" }`);
+  if (res.via === 'hyphen-compound') push('hyphen', `hyphenated word not in ECDICT as a whole; the card lists each part in order: ${res.parts!.map((p) => (p.w === p.l ? p.w : `${p.w}→${p.l}`)).join(' + ')}`, `"terms": { "${key}": "…" }  (only if a single combined gloss reads better)`);
   if (res.via === 'normal' && key !== res.lemma) {
     const cands = rawLemmas(db, key);
     if (cands.length > 1) push('ambiguous', `candidates: ${cands.join(' / ')}; using "${cands[0]}"`, fixLemma(key, cands[1]) + ' (if the other one is right)');
@@ -238,7 +271,7 @@ for (const f of findings) byKind.set(f.kind, [...(byKind.get(f.kind) ?? []), f])
 
 const KIND_HELP: Record<string, string> = {
   fallback: 'Words ECDICT does not know as a form; the lemma was guessed by suffix rules. Check, then add to "lemma" (or "terms").',
-  hyphen: 'Hyphenated words missing from ECDICT; the card shows one part. Consider adding to "terms" with a full note.',
+  hyphen: 'Hyphenated words missing from ECDICT as a whole. Informational: the card lists each part\'s definition in order. Add to "terms" only when a single combined gloss is clearly better.',
   ambiguous: 'ECDICT lists several possible lemmas. The first (most frequent) is used. Override if the other is more natural.',
   'lemma-does-not-list-form': 'Lemma link exists only on the form\'s own row. Usually fine; check unusual ones.',
   'form-more-common-than-lemma': 'The clicked form is more frequent than its claimed lemma and has its own meaning (e.g. number→numb). Likely wrong lemma: override to itself.',
@@ -277,7 +310,7 @@ for (const lv of LEVELS) write(`dict/entries-${lv.toLowerCase()}.json`, shards[l
 
 mkdirSync(resolve(ROOT, 'reports'), { recursive: true });
 writeFileSync(resolve(ROOT, 'reports/build-report.md'), md);
-writeFileSync(resolve(ROOT, 'reports/build-report.json'), JSON.stringify({ flags, findings, articles: sorted.map((a) => ({ id: a.id, level: a.level, words: a.wordCount, ...a.meta.stats })) }, null, 2));
+writeFileSync(resolve(ROOT, 'reports/build-report.json'), JSON.stringify({ flags, findings, articles: sorted.map((a) => ({ id: a.id, level: a.level, words: a.wordCount, ...a.meta.stats, offLevelAll: offAll.get(a.id) ?? [] })) }, null, 2));
 const size = (p: string) => readFileSync(resolve(out, p)).length;
 console.log(`[data] ${articles.length} articles; forms=${Object.keys(formsOut).length}; entries B1/B2/C1 = ${LEVELS.map((l) => Object.keys(shards[l]).length).join('/')}`);
 console.log(`[data] shard bytes: forms=${size('dict/forms.json')} ${LEVELS.map((l) => `${l}=${size(`dict/entries-${l.toLowerCase()}.json`)}`).join(' ')}`);

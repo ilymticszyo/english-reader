@@ -1016,6 +1016,50 @@
   [
    "being",
    "be"
+  ],
+  [
+   "scrolling",
+   "scroll"
+  ],
+  [
+   "ingest",
+   "ingest"
+  ],
+  [
+   "leaves",
+   "leaf"
+  ],
+  [
+   "thousands",
+   "thousand"
+  ],
+  [
+   "millions",
+   "million"
+  ],
+  [
+   "hundreds",
+   "hundred"
+  ],
+  [
+   "cannot",
+   "can"
+  ],
+  [
+   "bacteria",
+   "bacterium"
+  ],
+  [
+   "analyses",
+   "analysis"
+  ],
+  [
+   "gases",
+   "gas"
+  ],
+  [
+   "feeding",
+   "feed"
   ]
  ],
  "ambiguous": {
@@ -1071,7 +1115,7 @@
    ],
    [
     "leaves",
-    "leave"
+    "leaf"
    ],
    [
     "lives",
@@ -1442,5 +1486,148 @@
    "asking",
    "ask"
   ]
- ]
+ ],
+ "hyphen": {
+  "_comment": "[token, key, parts]: whole word known to ECDICT -> shown as is (parts null). Otherwise the card lists each part (surface -> lemma) in order. Unknown part -> NOT FOUND (build error NO DEFINITION).",
+  "cases": [
+   [
+    "well-known",
+    "well-known",
+    null
+   ],
+   [
+    "long-term",
+    "long-term",
+    null
+   ],
+   [
+    "part-time",
+    "part-time",
+    null
+   ],
+   [
+    "x-ray",
+    "x-ray",
+    null
+   ],
+   [
+    "mother-in-law",
+    "mother-in-law",
+    null
+   ],
+   [
+    "self-esteem",
+    "self-esteem",
+    null
+   ],
+   [
+    "up-to-date",
+    "up-to-date",
+    null
+   ],
+   [
+    "Well-known",
+    "well-known",
+    null
+   ],
+   [
+    "well-explained",
+    "well-explained",
+    [
+     [
+      "well",
+      "well"
+     ],
+     [
+      "explained",
+      "explain"
+     ]
+    ]
+   ],
+   [
+    "movable-type",
+    "movable-type",
+    [
+     [
+      "movable",
+      "movable"
+     ],
+     [
+      "type",
+      "type"
+     ]
+    ]
+   ],
+   [
+    "Well-Shaded",
+    "well-shaded",
+    [
+     [
+      "well",
+      "well"
+     ],
+     [
+      "shaded",
+      "shade"
+     ]
+    ]
+   ],
+   [
+    "photo-taking",
+    "photo-taking",
+    [
+     [
+      "photo",
+      "photo"
+     ],
+     [
+      "taking",
+      "take"
+     ]
+    ]
+   ],
+   [
+    "three-day",
+    "three-day",
+    [
+     [
+      "three",
+      "three"
+     ],
+     [
+      "day",
+      "day"
+     ]
+    ]
+   ],
+   [
+    "text-generating",
+    "text-generating",
+    [
+     [
+      "text",
+      "text"
+     ],
+     [
+      "generating",
+      "generate"
+     ]
+    ]
+   ],
+   [
+    "well-shaded's",
+    "well-shaded",
+    [
+     [
+      "well",
+      "well"
+     ],
+     [
+      "shaded",
+      "shade"
+     ]
+    ]
+   ]
+  ]
+ }
 }

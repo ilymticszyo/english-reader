@@ -70,6 +70,39 @@ await page.waitForSelector('.vocab-row');
 await page.waitForTimeout(200);
 await page.screenshot({ path: `${OUT}/07-vocab-mobile-dark.png` });
 await ctx.close();
+
+// 5. hyphenated word that ECDICT lacks as a whole: each part listed in order
+ctx = await browser.newContext({ viewport: { width: 1100, height: 760 }, deviceScaleFactor: 1 });
+page = await ctx.newPage();
+await page.goto(url + '#/read/c1-001');
+await page.waitForSelector('.article-body .w');
+await word(page, 'well-explained').first().scrollIntoViewIfNeeded();
+await word(page, 'well-explained').first().click();
+await page.waitForSelector('.card .card-part');
+await page.waitForTimeout(250);
+await page.screenshot({ path: `${OUT}/08-hyphen-parts.png` });
+await ctx.close();
+
+// 6. "new version available" banner (a modified copy of dist/ plays the role of the next deploy)
+{
+  const { cpSync, rmSync: rm, readFileSync, writeFileSync } = await import('node:fs');
+  const tmp = '/tmp/er-shot-update';
+  rm(tmp, { recursive: true, force: true });
+  cpSync(resolve(ROOT, 'dist'), tmp, { recursive: true });
+  const upd = await serve(tmp);
+  ctx = await browser.newContext({ viewport: { width: 390, height: 780 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+  page = await ctx.newPage();
+  await page.goto(upd.url + '#/read/b1-006');
+  await page.waitForSelector('.article-body .w');
+  await page.waitForFunction(() => navigator.serviceWorker.controller, null, { timeout: 15000 });
+  writeFileSync(`${tmp}/sw.js`, readFileSync(`${tmp}/sw.js`, 'utf8').replace(/const VERSION = '[^']+'/, "const VERSION = '9.9.9+next'"));
+  await page.evaluate(() => navigator.serviceWorker.getRegistration().then((r) => r.update()));
+  await page.waitForSelector('#update-banner', { timeout: 15000 });
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: `${OUT}/09-update-banner-mobile.png` });
+  await ctx.close();
+  upd.server.close();
+}
 await browser.close();
 server.close();
 console.log('screenshots saved to', OUT);

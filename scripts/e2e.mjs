@@ -38,6 +38,7 @@ async function newPage(opts = {}) {
   page.errors = errors;
   return page;
 }
+const PER = 25; // articles per level in the current content batch
 const word = (page, text, nth = 0) => page.locator('.article-body .w', { hasText: new RegExp(`^${text}$`) }).nth(nth);
 const cardTitle = async (page) => (await page.locator('.card .card-title').innerText()).replace(/\s+/g, ' ').trim();
 const lum = (rgb) => {
@@ -53,11 +54,11 @@ try {
   await page.goto(url);
   await page.waitForSelector('.card-item');
   check('3 level tabs', (await page.locator('.tab').count()) === 3);
-  check('B1 shows 5 articles', (await page.locator('.card-item').count()) === 5);
+  check(`B1 shows ${PER} articles`, (await page.locator('.card-item').count()) === PER);
   const loads = [];
   page.on('framenavigated', () => loads.push(1));
   await page.click('.tab[data-level="C1"]');
-  check('switch to C1 without reload', (await page.locator('.card-item').count()) === 5 && (await page.locator('.card-item .lv-C1').count()) === 5 && loads.length === 0);
+  check('switch to C1 without reload', (await page.locator('.card-item').count()) === PER && (await page.locator('.card-item .lv-C1').count()) === PER && loads.length === 0);
   await page.reload();
   await page.waitForSelector('.card-item');
   check('selected level persists after reload', (await page.locator('.tab.active').getAttribute('data-level')) === 'C1');
@@ -67,10 +68,10 @@ try {
   await page.fill('input[type=search]', 'zzzz');
   check('empty state with clear-filter button', (await page.locator('.empty button').count()) === 1);
   await page.click('.empty button');
-  check('clear filters restores list', (await page.locator('.card-item').count()) === 5);
+  check('clear filters restores list', (await page.locator('.card-item').count()) === PER);
   const topicVals = await page.locator('select[aria-label="按话题筛选"] option').allTextContents();
   await page.selectOption('select[aria-label="按话题筛选"]', { index: 1 });
-  check('topic filter works', (await page.locator('.card-item').count()) < 5 && topicVals.length > 2, `${await page.locator('.card-item').count()} items`);
+  check('topic filter works', (await page.locator('.card-item').count()) < PER && topicVals.length > 2, `${await page.locator('.card-item').count()} items`);
   check('filter response < 100ms (incl. input)', Date.now() - t0 < 1500);
   await page.selectOption('select[aria-label="按话题筛选"]', '');
   const firstMeta = await page.locator('.card-item').first().innerText();
@@ -196,7 +197,7 @@ try {
   await page.goto(url + '#/read/b1-001');
   await page.waitForSelector('.article-nav');
   check('first article: "previous" disabled', (await page.locator('.article-nav .btn.disabled').innerText()).includes('上一篇'));
-  await page.goto(url + '#/read/b1-005');
+  await page.goto(url + `#/read/b1-${PER}`.replace('b1-25', 'b1-025'));
   await page.waitForSelector('.article-nav');
   check('last article: "next" disabled', (await page.locator('.article-nav .btn.disabled').innerText()).includes('下一篇'));
   check('no console errors in reader flows', page.errors.length === 0, page.errors.join('; '));
@@ -388,7 +389,7 @@ try {
   check('scrolling to the end marks article read', await page.evaluate(() => JSON.parse(localStorage.getItem('ra:v1:progress'))['b2-005'].status === 'read'));
   await page.goto(url + '#/');
   await page.click('.tab[data-level="B2"]');
-  check('list shows 已读 status and level progress 1/5', (await page.locator('.card-item[data-id="b2-005"] .st-read').count()) === 1 && /1 \/ 5/.test(await page.locator('.progress-line').innerText()), await page.locator('.progress-line').innerText());
+  check('list shows 已读 status and level progress 1/25', (await page.locator('.card-item[data-id="b2-005"] .st-read').count()) === 1 && /1 \/ 25/.test(await page.locator('.progress-line').innerText()), await page.locator('.progress-line').innerText());
   await page.selectOption('select[aria-label="按阅读状态筛选"]', 'read');
   check('status filter (已读)', (await page.locator('.card-item').count()) === 1);
   await page.context().close();
@@ -454,7 +455,7 @@ try {
   page = await newPage();
   await page.goto(sub.url);
   await page.waitForSelector('.card-item');
-  check('sub-path: list loads (relative data paths)', (await page.locator('.card-item').count()) === 5, page.errors.join('; '));
+  check('sub-path: list loads (relative data paths)', (await page.locator('.card-item').count()) === PER, page.errors.join('; '));
   await page.goto(sub.url + '#/read/b1-002');
   await page.waitForSelector('.article-body .w');
   await word(page, 'went').click();
@@ -573,6 +574,32 @@ try {
   await page.keyboard.press('Escape');
   await page.context().close();
 
+
+  // ------------------------------------------------------------ hyphenated words
+  section('Hyphenated words');
+  {
+    page = await newPage();
+    await page.goto(url + '#/read/c1-001');
+    await page.waitForSelector('.article-body .w');
+    await word(page, 'well-explained').click();
+    await page.waitForSelector('.card');
+    check('compound missing from the dictionary: title shows the whole word', (await cardTitle(page)) === 'well-explained', await cardTitle(page));
+    const parts = await page.locator('.card .card-part').evaluateAll((els) => els.map((e) => ({ w: e.dataset.part, n: e.querySelectorAll('.def').length, t: e.querySelector('.part-title').innerText.replace(/\s+/g, ' ').trim() })));
+    check('...lists each part in order, each with its own definitions', parts.length === 2 && parts[0].w === 'well' && parts[1].w === 'explained' && parts.every((p) => p.n >= 1), JSON.stringify(parts));
+    check('...second part shows its lemma (explained ← explain)', /explained ← explain/.test(parts[1]?.t ?? ''), parts[1]?.t);
+    check('...explains why (no whole-word entry note)', /词典未收录整词/.test(await page.locator('.card .card-note').innerText()));
+    const vocab = await page.evaluate(() => JSON.parse(localStorage.getItem('ra:v1:vocab')));
+    check('...auto-collected vocab keeps the whole word with a combined gloss', vocab['well-explained'] && /^well .*；explained /.test(vocab['well-explained'].snap.zh), JSON.stringify(vocab['well-explained']?.snap));
+    await page.keyboard.press('Escape');
+    await page.goto(url + '#/read/b2-002');
+    await page.waitForSelector('.article-body .w');
+    await word(page, 'mid-sized').click();
+    await page.waitForSelector('.card');
+    check('whole hyphenated word known to ECDICT: shown as one entry, no per-part sections', (await cardTitle(page)) === 'mid-sized' && (await page.locator('.card .card-part').count()) === 0 && (await page.locator('.card .def').count()) >= 1, await cardTitle(page));
+    check('no console errors (hyphen)', page.errors.length === 0, page.errors.join('; '));
+    await page.context().close();
+  }
+
   // ------------------------------------------------------------ offline (service worker)
   section('Offline (service worker), root and sub-path');
   for (const [label, base] of [['root', url], ['sub-path /sub/english-reader/', sub.url]]) {
@@ -587,7 +614,7 @@ try {
     await page.context().setOffline(true);
     await page.reload();
     await page.waitForSelector('.card-item');
-    check(`${label}: offline reload shows the article list`, (await page.locator('.card-item').count()) === 5);
+    check(`${label}: offline reload shows the article list`, (await page.locator('.card-item').count()) === PER);
     await page.click('.tab[data-level="C1"]');
     await page.click('.card-item[data-id="c1-003"]');
     await page.waitForSelector('.article-body .w');
@@ -606,7 +633,7 @@ try {
     await page.context().close();
   }
 
-  section('Offline update: a new build replaces the old cache');
+  section('Update flow: new version waits, banner, activates only on tap');
   {
     const { cpSync, rmSync: rm2, readFileSync: rf, writeFileSync: wf } = await import('node:fs');
     const tmp = '/tmp/er-dist-update';
@@ -617,17 +644,47 @@ try {
     await page.goto(upd.url);
     await page.waitForSelector('.card-item');
     await page.waitForFunction(() => navigator.serviceWorker.controller, null, { timeout: 15000 });
+    await page.waitForTimeout(500);
+    check('first install: no "new version" banner', (await page.locator('#update-banner').count()) === 0);
+    check('sw.js has no unconditional skipWaiting (only on message)', !/install[\s\S]{0,400}skipWaiting\(\)\)/.test(rf(`${tmp}/sw.js`, 'utf8')) && /SKIP_WAITING/.test(rf(`${tmp}/sw.js`, 'utf8')));
     const oldKeys = await page.evaluate(() => caches.keys());
+    // open an article and scroll, so we can prove the update never interrupts reading
+    await page.click('.card-item[data-id="b1-001"]');
+    await page.waitForSelector('.article-body .w');
+    await page.evaluate(() => { window.__marker = 'same-page'; window.scrollTo(0, 120); });
     const swText = rf(`${tmp}/sw.js`, 'utf8').replace(/const VERSION = '[^']+'/, "const VERSION = '9.9.9+newbuild'");
     wf(`${tmp}/sw.js`, swText);
     wf(`${tmp}/version.json`, JSON.stringify({ version: '9.9.9+newbuild', files: 26, builtAt: new Date().toISOString() }));
+    // the app checks for updates when opened; trigger the same check without reloading the reading page
+    await page.evaluate(() => navigator.serviceWorker.getRegistration().then((r) => r.update()));
+    await page.waitForSelector('#update-banner', { timeout: 15000 });
+    check('banner shows Chinese text "有新版本，点击刷新"', (await page.locator('#update-banner .update-go').innerText()) === '有新版本，点击刷新');
+    const both = await page.evaluate(() => caches.keys());
+    check('new version is installed in its own cache while the old cache stays', both.length === 2 && both.includes(oldKeys[0]) && both.includes('english-reader-9.9.9+newbuild'), both.join());
+    await page.waitForTimeout(2500);
+    check('no auto takeover: same page, same scroll, old SW still controls, banner still there', await page.evaluate(async () => {
+      const reg = await navigator.serviceWorker.getRegistration();
+      return window.__marker === 'same-page' && window.scrollY > 50 && !!reg.waiting && /sw\.js/.test(String(reg.active && reg.active.scriptURL)) && !!document.getElementById('update-banner');
+    }));
+    check('banner is a >=44px touch target', (await page.locator('#update-banner .update-go').boundingBox()).height >= 44);
+    // dismiss: banner goes away but the update stays waiting; reopening the app brings it back
+    await page.click('#update-banner .update-later');
+    check('dismiss hides the banner, update stays waiting', (await page.locator('#update-banner').count()) === 0 && (await page.evaluate(async () => !!(await navigator.serviceWorker.getRegistration()).waiting)));
     await page.reload();
-    for (let i = 0; i < 60; i++) { if ((await page.evaluate(() => caches.keys())).join() === 'english-reader-9.9.9+newbuild') break; await page.waitForTimeout(250); }
+    await page.waitForSelector('#update-banner', { timeout: 15000 });
+    check('reopening the app shows the banner again (still waiting, not activated by reload)', (await page.evaluate(() => caches.keys())).length === 2);
+    await page.evaluate(() => { window.__marker = 'before-tap'; });
+    await page.click('#update-banner .update-go');
+    await page.waitForFunction(() => window.__marker === undefined, null, { timeout: 15000 });
+    await page.waitForSelector('.card-item, .article-body .w');
+    for (let i = 0; i < 40; i++) { if ((await page.evaluate(() => caches.keys())).join() === 'english-reader-9.9.9+newbuild') break; await page.waitForTimeout(250); }
     const newKeys = await page.evaluate(() => caches.keys());
-    check('new SW version installs its own cache and deletes the old one', oldKeys.length === 1 && newKeys.length === 1 && newKeys[0] === 'english-reader-9.9.9+newbuild', `${oldKeys} → ${newKeys}`);
+    check('tap: waiting SW activates, page reloads once, old cache deleted', newKeys.length === 1 && newKeys[0] === 'english-reader-9.9.9+newbuild', `${oldKeys} → ${newKeys}`);
+    check('after the tap the banner is gone and the new SW controls the page', (await page.locator('#update-banner').count()) === 0 && (await page.evaluate(() => !!navigator.serviceWorker.controller)));
+    await page.context().setOffline(true);
     await page.reload();
-    await page.waitForSelector('.card-item');
-    check('app still works after the update (offline)', await (async () => { await page.context().setOffline(true); await page.reload(); await page.waitForSelector('.card-item'); return (await page.locator('.card-item').count()) === 5; })());
+    await page.waitForSelector('.card-item, .article-body .w');
+    check('app still works offline on the new version', (await page.locator('.card-item, .article-body .w').count()) > 0);
     await page.context().close();
     upd.server.close();
   }

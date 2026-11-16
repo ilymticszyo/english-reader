@@ -1,6 +1,6 @@
 {
   "name": "english-reader",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "description": "Static graded-reading site (B1/B2/C1) with ECDICT popup dictionary",

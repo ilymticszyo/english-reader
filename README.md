@@ -2,7 +2,7 @@
 
 纯静态的英语分级阅读网页：B1 / B2 / C1 三个级别，点词即查 ECDICT 中文词典（带词形还原、音标、浏览器 TTS 发音），生词本与阅读进度存在 `localStorage`。无后端、无账号。
 
-> 当前状态：**里程碑 M2**——主流程 + 离线（Service Worker）+ 设置/备份/关于页，15 篇 AI 生成示例文章（每级 5 篇）。
+> 当前状态：**M3 第 1 批**——主流程 + 离线（Service Worker）+ 设置/备份/关于页，75 篇 AI 生成文章（B1 / B2 / C1 各 25 篇）。
 
 ## 快速开始
 
@@ -29,11 +29,13 @@ npm run screenshots
 
 ### 离线
 
-`npm run build` 的最后一步（`scripts/make-sw.mjs`）生成 `dist/sw.js` 和 `dist/version.json`：Service Worker 预缓存应用壳和全部文章 / 词典分片（约 600 KB），首次访问后断网也能完整使用。注册路径是相对的（`./sw.js`），在 GitHub Pages 子路径下作用域就是该子路径。版本号 = `package.json` 的 version + 全部文件内容的哈希；内容有任何变化，新版本会在下次打开时安装并删除旧缓存。设置页显示版本号和离线状态。
+`npm run build` 的最后一步（`scripts/make-sw.mjs`）生成 `dist/sw.js` 和 `dist/version.json`：Service Worker 预缓存应用壳和全部文章 / 词典分片（约 600 KB），首次访问后断网也能完整使用。注册路径是相对的（`./sw.js`），在 GitHub Pages 子路径下作用域就是该子路径。版本号 = `package.json` 的 version + 全部文件内容的哈希（同样的内容总是同一个版本号）。设置页显示版本号和离线状态。
+
+**更新流程**：新版本在后台安装并等待，**不会**在阅读过程中自动接管页面（Service Worker 里没有无条件的 `skipWaiting`）。检测到新版本时页面顶部出现一条小提示“有新版本，点击刷新”；只有点它，等待中的 Service Worker 才会激活，页面随即重新加载一次，旧缓存被删除。点“✕”可以先忽略，下次打开应用时仍会提示。
 
 ## 每批文章的工作流（M3 量产时用）
 
-1. 把新文章放进 `content/articles/`（`b1-006.md` …，frontmatter 同现有文章）。`build.config.json` 里的 `expectedPerLevel` 在 M3 末尾改成 100。
+1. 把新文章放进 `content/articles/`（`b1-006.md` …，frontmatter 同现有文章）。`build.config.json` 里的 `expectedPerLevel` 是每级的最低篇数（现为 25，随批次增加，M3 末尾改成 100）。
 2. `npm run build`。**只有这些会让构建失败**：文章元数据不合法 / id 或标题重复 / 某级别篇数不足 / 有词在 ECDICT 里完全查不到、也不在 `terms` 里（报错信息 `NO DEFINITION`）/ 构建期与运行时词元解析不一致。
 3. 打开 `reports/build-report.md`（每次构建都会重新生成，不进 git），逐项过一遍：
    - **Calibration flags**：词数、平均句长、词汇覆盖率（B1/B2 ≥ 97%，C1 ≥ 94%）不达标的文章。只做标记供人工复核，**不拒收**；决定是重写、放行还是调阈值（`build.config.json`）。
@@ -41,7 +43,7 @@ npm run screenshots
    - **form-more-common-than-lemma**：被点的词比它的“词元”更常见且有独立义项（例如 number→numb）→ 很可能错了，在 `lemma` 里改成它自己。
    - **ambiguous**：ECDICT 有多个候选词元（lives→life/live），默认取最常见的；不合适就在 `lemma` 里指定。
    - **lexicalized-ing-candidate**：有独立名词义、但目前还显示动词的 -ing 词 → 如果名词义才是常用义，加进 `lexicalizedIng`。
-   - **hyphen**：连字符词 ECDICT 没有整词，卡片只显示其中一部分 → 视情况加进 `terms`。
+   - **hyphen**（仅供参考）：连字符词 ECDICT 没有整词时，卡片会按顺序列出每个组成部分的释义（如 well-explained → well + explain）；整词在 ECDICT 里就直接显示整词。只有当一句合并释义明显更好时才加进 `terms`。某个部分查不到释义会报 `NO DEFINITION`（构建失败）。
    - **no-cefr**：词元不在 CEFR 词表里（只影响覆盖率统计）。
 4. 所有人工修正只改一个文件：`content/lemma-overrides.json`，三个区块：
    - `lemma`：`{"number": "number", "are": "be"}`——形 → 词元（写成自己表示“它自己就是词元”）。

@@ -3,6 +3,7 @@
 //   cases            [form, expected lemma]
 //   ambiguous        words that are both an inflected form AND have their own entry (PRD C5, need >= 30)
 //   lexicalizedIng   every word in the override file's lexicalizedIng list must be its own lemma (verb folded as `alt`)
+//   hyphen           hyphenated words: whole ECDICT headword stays whole, otherwise the card lists the parts in order
 //   verbalIng        -ing words that must keep resolving to the verb (running -> run, going -> go, ...)
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -17,9 +18,10 @@ const basic: [string, string][] = cfg.cases;
 const amb: [string, string][] = cfg.ambiguous.cases;
 const lexExpect: [string, string][] = cfg.lexicalizedIngCases; // [word, expected folded verb lemma or ""]
 const verbal: [string, string][] = cfg.verbalIng;
+const hyphen: [string, string, [string, string][] | null][] = cfg.hyphen.cases;
 
 const forms: Record<string, string> = {};
-const entries: Record<string, { alt?: string }> = {};
+const entries: Record<string, { alt?: string; parts?: { w: string; l: string }[] }> = {};
 const words = [...basic, ...amb, ...verbal].map(([w]) => w).concat([...ov.lexicalizedIng], lexExpect.map(([w]) => w));
 for (const w of words) {
   const r = resolveForBuild(w, db, ov);
@@ -36,6 +38,16 @@ for (const w of words) {
     forms[r.key] = r.lemma;
     const row = db.rows.get(r.key);
     if (row && hasOwnMeaning(row)) entries[r.key] = {};
+  }
+}
+// hyphenated words: whole ECDICT headword -> itself; otherwise a compound whose entry lists every part (same shape as build-data.ts)
+for (const [tok] of hyphen) {
+  const r = resolveForBuild(tok, db, ov);
+  if (!r) continue;
+  entries[r.lemma] = r.parts ? { parts: r.parts } : {};
+  for (const p of r.parts ?? []) {
+    entries[p.l] ??= {};
+    if (p.w !== p.l) forms[p.w] = p.l;
   }
 }
 const view = viewOf(forms, entries);
@@ -61,13 +73,27 @@ for (const [w, alt] of lexExpect) {
     console.log(`  ✗ [lexicalized alt] ${w}: expected folded verb "${alt}", got "${got}"`);
   }
 }
+for (const [tok, key, parts] of hyphen) {
+  n += 2;
+  const build = resolveForBuild(tok, db, ov);
+  const got = resolveToken(tok, view);
+  const gotParts = (entries[got?.lemma ?? '']?.parts ?? null)?.map((p) => [p.w, p.l]) ?? null;
+  if (!build || build.key !== key || JSON.stringify((build.parts ?? null)?.map((p) => [p.w, p.l]) ?? null) !== JSON.stringify(parts)) {
+    fail++;
+    console.log(`  ✗ [hyphen build] ${tok}: expected key ${key} parts ${JSON.stringify(parts)}, got ${JSON.stringify(build)}`);
+  }
+  if (!got || got.lemma !== key || JSON.stringify(gotParts) !== JSON.stringify(parts)) {
+    fail++;
+    console.log(`  ✗ [hyphen runtime] ${tok}: expected ${key} ${JSON.stringify(parts)}, got ${got?.lemma} ${JSON.stringify(gotParts)}`);
+  }
+}
 let ownEntries = 0;
 for (const [form, lemma] of amb) {
   const row = db.rows.get(form);
   if (form !== lemma && row && hasOwnMeaning(row)) ownEntries++;
 }
 const total = basic.length;
-console.log(`lemma cases: ${n - fail}/${n} passed (basic ${total}, ambiguous ${amb.length}, lexicalized -ing ${ov.lexicalizedIng.size}+${lexExpect.length} alt checks, verbal -ing ${verbal.length}); ambiguous words with own collapsible entry: ${ownEntries}`);
+console.log(`lemma cases: ${n - fail}/${n} passed (basic ${total}, ambiguous ${amb.length}, lexicalized -ing ${ov.lexicalizedIng.size}+${lexExpect.length} alt checks, verbal -ing ${verbal.length}, hyphen ${hyphen.length}x2); ambiguous words with own collapsible entry: ${ownEntries}`);
 if (total < 200) {
   console.log(`  ✗ need >= 200 basic cases, have ${total}`);
   fail++;

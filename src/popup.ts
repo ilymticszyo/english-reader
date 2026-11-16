@@ -1,5 +1,5 @@
 import { clear, h } from './dom.ts';
-import { lookup } from './data.ts';
+import { getEntry, lookup } from './data.ts';
 import type { LookupResult } from './data.ts';
 import { FORM_LABELS } from './shared/text.ts';
 import type { DictEntry } from './shared/types.ts';
@@ -24,6 +24,16 @@ const isMobile = () => window.matchMedia('(max-width: 640px)').matches;
 
 export function snapshotOf(entry?: DictEntry): VocabItem['snap'] {
   if (!entry) return {};
+  if (entry.parts) {
+    // hyphenated word without its own dictionary entry: "well 好；known 已知的"
+    const zh = entry.parts
+      .map((p) => {
+        const d = getEntry(p.l)?.d[0];
+        return d ? `${p.w} ${d.zh}` : p.w;
+      })
+      .join('；');
+    return { zh };
+  }
   const zh = entry.d
     .slice(0, 3)
     .map((d) => (d.pos ? `${d.pos} ${d.zh}` : d.zh))
@@ -122,7 +132,7 @@ export function showCard(anchor: HTMLElement, token: string, ctx: VocabCtx | nul
       h('span', { class: 'card-formtype' }, `（${res!.via === 'fallback' ? '词形推测' : formLabel(entry, res!.key)}）`),
     );
   } else {
-    title.append(h('span', { class: 'card-lemma' }, entry?.proper ? token : lemma));
+    title.append(h('span', { class: 'card-lemma' }, entry?.proper || entry?.parts ? token : lemma));
   }
 
   const star = h('button', { class: 'iconbtn star', type: 'button', 'aria-label': '加入/移出生词本', 'aria-pressed': 'false' });
@@ -153,7 +163,19 @@ export function showCard(anchor: HTMLElement, token: string, ctx: VocabCtx | nul
 
   if (entry?.p) card.append(h('div', { class: 'card-phon', title: 'ECDICT 参考音标' }, `/${entry.p}/`));
 
-  if (entry) {
+  if (entry?.parts && r.parts) {
+    card.append(h('div', { class: 'card-note' }, '词典未收录整词，按组成部分依次释义'));
+    r.parts.forEach((p, i) => {
+      const sec = h('section', { class: 'card-part', dataset: { part: p.w } });
+      const ttl = h('h4', { class: 'part-title' }, h('span', { class: 'part-n' }, `${i + 1}`), h('span', { class: 'part-w' }, p.w));
+      if (p.w !== p.l) ttl.append(h('span', { class: 'card-arrow' }, ' ← '), h('span', { class: 'part-lemma' }, p.l));
+      sec.append(ttl);
+      if (p.entry?.p) sec.append(h('div', { class: 'card-phon' }, `/${p.entry.p}/`));
+      if (p.entry) sec.append(...entryBody(p.entry));
+      else sec.append(h('div', { class: 'card-missing' }, '词典未收录'));
+      card.append(sec);
+    });
+  } else if (entry) {
     if (entry.proper) card.append(h('div', { class: 'card-note' }, '专有名词 / 术语（补充释义）'));
     card.append(...entryBody(entry));
   } else {

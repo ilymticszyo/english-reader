@@ -11,9 +11,14 @@ self.addEventListener('install', (event) => {
   event.waitUntil(
     caches
       .open(CACHE)
-      .then((cache) => cache.addAll(FILES.map((f) => new Request(abs(f), { cache: 'reload' }))))
-      .then(() => self.skipWaiting()),
+      .then((cache) => cache.addAll(FILES.map((f) => new Request(abs(f), { cache: 'reload' })))),
+    // No skipWaiting() here: a new version waits until the user taps "refresh" in the app (message below),
+    // so an update never takes over a page in the middle of reading.
   );
+});
+
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {

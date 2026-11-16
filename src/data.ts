@@ -57,6 +57,8 @@ export interface LookupResult {
   /** lexicalized -ing noun: the verb lemma's entry, folded below the card */
   altKey?: string;
   altEntry?: DictEntry;
+  /** hyphenated word missing from the dictionary: each part's entry, in order */
+  parts?: { w: string; l: string; entry?: DictEntry }[];
 }
 
 export function lookup(token: string): LookupResult {
@@ -65,7 +67,8 @@ export function lookup(token: string): LookupResult {
   const entry = entries[res.lemma];
   const formEntry = res.key !== res.lemma && Object.prototype.hasOwnProperty.call(entries, res.key) ? entries[res.key] : undefined;
   const altKey = entry?.alt && Object.prototype.hasOwnProperty.call(entries, entry.alt) ? entry.alt : undefined;
-  return { token, res, lemma: res.lemma, entry, formEntry, altKey, altEntry: altKey ? entries[altKey] : undefined };
+  const parts = entry?.parts?.map((p) => ({ ...p, entry: Object.prototype.hasOwnProperty.call(entries, p.l) ? entries[p.l] : undefined }));
+  return { token, res, lemma: res.lemma, entry, formEntry, altKey, altEntry: altKey ? entries[altKey] : undefined, parts };
 }
 
 export const getEntry = (k: string): DictEntry | undefined => entries[k];

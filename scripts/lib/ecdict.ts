@@ -214,22 +214,34 @@ export interface BuildRes {
   lemma: string;
   kind: 'proper' | 'dict';
   /** how the lemma was decided */
-  via: 'term' | 'normal' | 'override' | 'lexicalized' | 'fallback' | 'hyphen-part';
+  via: 'term' | 'normal' | 'override' | 'lexicalized' | 'fallback' | 'hyphen-compound';
+  /** hyphenated word missing from ECDICT as a whole: each part's resolution, in order (the card lists them one by one) */
+  parts?: { w: string; l: string }[];
 }
 
 /** Build-time resolution of a clicked token: terms whitelist -> manual lemma -> ECDICT lemma (exchange) -> own headword -> suffix fallback. */
 export function resolveForBuild(token: string, db: Db, ov: Overrides): BuildRes | null {
   const cands = candidateKeys(token);
   const hyphen = token.includes('-');
-  for (const [i, c] of cands.entries()) {
-    const part = hyphen && c.toLowerCase() !== token.replace(/’/g, "'").toLowerCase();
-    void i;
+  for (const c of cands) {
+    if (hyphen && !c.includes('-')) {
+      // Whole hyphenated word is neither a term nor in ECDICT: show every part's definition, in order.
+      const whole = token.replace(/’/g, "'").replace(/'s$/i, '').toLowerCase();
+      const parts: { w: string; l: string }[] = [];
+      for (const w of whole.split('-')) {
+        if (!w) continue;
+        const r = resolveForBuild(w, db, ov);
+        if (!r) return null;
+        parts.push({ w, l: r.lemma });
+      }
+      return parts.length ? { key: whole, lemma: whole, kind: 'dict', via: 'hyphen-compound', parts } : null;
+    }
     if (has(ov.terms, c)) return { key: c, lemma: c, kind: 'proper', via: 'term' };
     const lc = c.toLowerCase();
     const lem = lemmasOf(db, lc, ov);
     const via = has(ov.lemma, lc) ? 'override' : ov.lexicalizedIng.has(lc) ? 'lexicalized' : 'normal';
-    if (lem.length) return { key: lc, lemma: lem[0], kind: 'dict', via: part ? 'hyphen-part' : via };
-    if (db.rows.has(lc)) return { key: lc, lemma: lc, kind: 'dict', via: part ? 'hyphen-part' : via };
+    if (lem.length) return { key: lc, lemma: lem[0], kind: 'dict', via };
+    if (db.rows.has(lc)) return { key: lc, lemma: lc, kind: 'dict', via };
   }
   for (const c of cands) {
     for (const s of suffixCandidates(c)) {

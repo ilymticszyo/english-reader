@@ -50,6 +50,8 @@ export interface DictEntry {
   proper?: boolean;
   /** lexicalized -ing noun: key of the verb lemma entry folded below this card */
   alt?: string;
+  /** hyphenated word that ECDICT lacks as a whole: its parts in order (w = surface part, l = lemma key of its entry); d is empty */
+  parts?: { w: string; l: string }[];
 }
 
 /** form -> lemma */
