@@ -38,7 +38,7 @@ async function newPage(opts = {}) {
   page.errors = errors;
   return page;
 }
-const PER = 75; // articles per level in the current content batch
+const PER = 100; // articles per level in the current content batch
 const word = (page, text, nth = 0) => page.locator('.article-body .w', { hasText: new RegExp(`^${text}$`) }).nth(nth);
 const cardTitle = async (page) => (await page.locator('.card .card-title').innerText()).replace(/\s+/g, ' ').trim();
 const lum = (rgb) => {
@@ -389,7 +389,7 @@ try {
   check('scrolling to the end marks article read', await page.evaluate(() => JSON.parse(localStorage.getItem('ra:v1:progress'))['b2-005'].status === 'read'));
   await page.goto(url + '#/');
   await page.click('.tab[data-level="B2"]');
-  check('list shows 已读 status and level progress 1/75', (await page.locator('.card-item[data-id="b2-005"] .st-read').count()) === 1 && /1 \/ 75/.test(await page.locator('.progress-line').innerText()), await page.locator('.progress-line').innerText());
+  check('list shows 已读 status and level progress 1/100', (await page.locator('.card-item[data-id="b2-005"] .st-read').count()) === 1 && /1 \/ 100/.test(await page.locator('.progress-line').innerText()), await page.locator('.progress-line').innerText());
   await page.selectOption('select[aria-label="按阅读状态筛选"]', 'read');
   check('status filter (已读)', (await page.locator('.card-item').count()) === 1);
   await page.context().close();

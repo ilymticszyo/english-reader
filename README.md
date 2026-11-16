@@ -2,7 +2,7 @@
 
 纯静态的英语分级阅读网页：B1 / B2 / C1 三个级别，点词即查 ECDICT 中文词典（带词形还原、音标、浏览器 TTS 发音），生词本与阅读进度存在 `localStorage`。无后端、无账号。
 
-> 当前状态：**M3 第 3 批**——主流程 + 离线（Service Worker）+ 设置/备份/关于页，225 篇 AI 生成文章（B1 / B2 / C1 各 75 篇）。
+> 当前状态：**M3 第 4 批（完成）**——主流程 + 离线（Service Worker）+ 设置/备份/关于页，300 篇 AI 生成文章（B1 / B2 / C1 各 100 篇）。
 
 > 分词规则：年代写法（1870s、'90s、1920s）是**单个非词记号**：不计入字数与覆盖率，阅读器里也不可点击（不会再被拆成 `s`）。
 
@@ -37,7 +37,7 @@ npm run screenshots
 
 ## 每批文章的工作流（M3 量产时用）
 
-1. 把新文章放进 `content/articles/`（`b1-006.md` …，frontmatter 同现有文章）。`build.config.json` 里的 `expectedPerLevel` 是每级的最低篇数（现为 75，随批次增加，M3 末尾改成 100）。
+1. 把新文章放进 `content/articles/`（`b1-006.md` …，frontmatter 同现有文章）。`build.config.json` 里的 `expectedPerLevel` 是每级的最低篇数（现为 100，M3 已完成）。
 2. `npm run build`。**只有这些会让构建失败**：文章元数据不合法 / id 或标题重复 / 某级别篇数不足 / 有词在 ECDICT 里完全查不到、也不在 `terms` 里（报错信息 `NO DEFINITION`）/ 构建期与运行时词元解析不一致。
 3. 打开 `reports/build-report.md`（每次构建都会重新生成，不进 git），逐项过一遍：
    - **Calibration flags**：词数、平均句长、词汇覆盖率（B1/B2 ≥ 97%，C1 ≥ 94%）不达标的文章。只做标记供人工复核，**不拒收**；决定是重写、放行还是调阈值（`build.config.json`）。

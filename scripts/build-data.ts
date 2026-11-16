@@ -199,6 +199,7 @@ for (const a of articles) {
       err(`${a.id}: runtime resolver cannot find "${t.text}"`);
       continue;
     }
+    if (!t.res) { err(`${a.id}: build could not resolve "${t.text}"`); continue; }
     if (r.lemma !== t.res!.lemma) err(`${a.id}: resolver mismatch for "${t.text}": build=${t.res!.lemma} runtime=${r.lemma}`);
     if (t.res!.kind === 'proper') continue;
     total++;
