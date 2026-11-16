@@ -115,9 +115,15 @@ export interface Token {
   end: number;
 }
 
+/** Decade forms (1870s, 1990s, '90s, 80s): one non-word token, so the trailing "s" is never a word. */
+const DECADE_SRC = String.raw`(?<![A-Za-z0-9])['’]?\d{2,4}s\b`;
+const TOKEN_RE = new RegExp(`${DECADE_SRC}|${WORD_RE.source}`, 'g');
+const STARTS_WITH_DECADE = /^['’]?\d/;
+
 export function tokenize(text: string): Token[] {
   const out: Token[] = [];
-  for (const m of text.matchAll(WORD_RE)) {
+  for (const m of text.matchAll(TOKEN_RE)) {
+    if (STARTS_WITH_DECADE.test(m[0])) continue; // decade: neither counted nor clickable
     out.push({ text: m[0], start: m.index!, end: m.index! + m[0].length });
   }
   return out;

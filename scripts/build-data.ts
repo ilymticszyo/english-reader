@@ -7,7 +7,7 @@
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { loadSourceArticles } from './lib/articles.ts';
-import { ROOT, ensureEcdict, hasOwnMeaning, lexAlt, loadCefr, loadDb, loadOverrides, makeEntry, parseExchange, rawLemmas, resolveForBuild } from './lib/ecdict.ts';
+import { ROOT, ensureEcdict, hasOwnMeaning, lexAlt, loadCefr, loadDb, loadOverrides, applyCefrOverrides, makeEntry, parseExchange, rawLemmas, resolveForBuild } from './lib/ecdict.ts';
 import type { BuildRes } from './lib/ecdict.ts';
 import { resolveToken, splitSentences, tokenize, viewOf } from '../src/shared/text.ts';
 import { LEVELS, LEVEL_RANK } from '../src/shared/types.ts';
@@ -24,6 +24,8 @@ const flags: string[] = [];
 const t0 = Date.now();
 const db = loadDb(await ensureEcdict());
 const cefr = loadCefr();
+const cefrFix = applyCefrOverrides(cefr, db, ov);
+console.log(`[data] CEFR overrides: ${cefrFix.manual.length} manual, ${cefrFix.fallback.length} whitelist words took their verb lemma's level`);
 console.log(`[data] ECDICT rows: ${db.rows.size}, CEFR words: ${Object.keys(cefr).length} (${Date.now() - t0}ms)`);
 const rank = (k: string) => {
   const r = db.rows.get(k);
@@ -173,7 +175,7 @@ for (const key of [...usedKeys].sort()) {
       err(`NO DEFINITION: entry missing for "${key}"`);
       continue;
     }
-    entry = makeEntry(row, cefr, key);
+    entry = makeEntry(row, cefr, key, ov);
     if (!entry.d.length) err(`NO DEFINITION: entry "${key}" has no Chinese definition`);
     if (altOf.has(key)) entry.alt = altOf.get(key);
   }

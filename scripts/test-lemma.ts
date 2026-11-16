@@ -7,8 +7,8 @@
 //   verbalIng        -ing words that must keep resolving to the verb (running -> run, going -> go, ...)
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { ROOT, ensureEcdict, hasOwnMeaning, lexAlt, loadDb, loadOverrides, resolveForBuild } from './lib/ecdict.ts';
-import { resolveToken, viewOf } from '../src/shared/text.ts';
+import { ROOT, applyCefrOverrides, ensureEcdict, hasOwnMeaning, lexAlt, loadCefr, loadDb, loadOverrides, makeEntry, resolveForBuild } from './lib/ecdict.ts';
+import { resolveToken, tokenize, viewOf } from '../src/shared/text.ts';
 
 const cfg = JSON.parse(readFileSync(resolve(ROOT, 'tests/lemma-cases.json'), 'utf8'));
 const ov = loadOverrides();
@@ -88,13 +88,41 @@ for (const [tok, key, parts] of hyphen) {
     console.log(`  ✗ [hyphen runtime] ${tok}: expected ${key} ${JSON.stringify(parts)}, got ${got?.lemma} ${JSON.stringify(gotParts)}`);
   }
 }
+// decade forms are one non-word token: not counted, not clickable (no stray "s")
+const tokCases: [string, string[]][] = cfg.tokenizer;
+for (const [text, want] of tokCases) {
+  n++;
+  const got = tokenize(text).map((t) => t.text);
+  if (JSON.stringify(got) !== JSON.stringify(want)) {
+    fail++;
+    console.log(`  ✗ [tokenizer] ${JSON.stringify(text)}: expected ${JSON.stringify(want)}, got ${JSON.stringify(got)}`);
+  }
+}
+// CEFR: manual levels win; whitelist words without their own level take the verb lemma's level; lead definition goes first
+const cefrOwn = loadCefr();
+const cefrAll = loadCefr();
+applyCefrOverrides(cefrAll, db, ov);
+for (const [w, lv] of cfg.cefr.manual as [string, string][]) {
+  n++;
+  if (cefrAll[w] !== lv) { fail++; console.log(`  ✗ [cefr manual] ${w}: expected ${lv}, got ${cefrAll[w]}`); }
+}
+for (const [w, verb] of cfg.cefr.fallback as [string, string][]) {
+  n++;
+  if (cefrOwn[w] || !cefrOwn[verb] || cefrAll[w] !== cefrOwn[verb]) { fail++; console.log(`  ✗ [cefr fallback] ${w}: own=${cefrOwn[w]} verb(${verb})=${cefrOwn[verb]} got ${cefrAll[w]}`); }
+}
+for (const [w, pos, zh] of cfg.cefr.leadDefs as [string, string, string][]) {
+  n++;
+  const row = db.rows.get(w);
+  const e = row ? makeEntry(row, cefrAll, w, ov) : null;
+  if (!e || e.d[0]?.pos !== pos || !e.d[0].zh.includes(zh) || e.d.length < 2) { fail++; console.log(`  ✗ [leadDef] ${w}: first def ${JSON.stringify(e?.d[0])}`); }
+}
 let ownEntries = 0;
 for (const [form, lemma] of amb) {
   const row = db.rows.get(form);
   if (form !== lemma && row && hasOwnMeaning(row)) ownEntries++;
 }
 const total = basic.length;
-console.log(`lemma cases: ${n - fail}/${n} passed (basic ${total}, ambiguous ${amb.length}, lexicalized -ing ${ov.lexicalizedIng.size}, adjectival participles ${ov.lexicalizedAdj.size}, ${lexExpect.length} alt checks, verbal -ing ${verbal.length}, hyphen ${hyphen.length}x2); ambiguous words with own collapsible entry: ${ownEntries}`);
+console.log(`lemma cases: ${n - fail}/${n} passed (basic ${total}, ambiguous ${amb.length}, lexicalized -ing ${ov.lexicalizedIng.size}, adjectival participles ${ov.lexicalizedAdj.size}, ${lexExpect.length} alt checks, verbal -ing ${verbal.length}, hyphen ${hyphen.length}x2, tokenizer ${tokCases.length}, cefr ${cfg.cefr.manual.length + cfg.cefr.fallback.length + cfg.cefr.leadDefs.length}); ambiguous words with own collapsible entry: ${ownEntries}`);
 if (total < 200) {
   console.log(`  ✗ need >= 200 basic cases, have ${total}`);
   fail++;

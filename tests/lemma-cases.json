@@ -1198,10 +1198,6 @@
     "willing"
    ],
    [
-    "according",
-    "accord"
-   ],
-   [
     "armed",
     "arm"
    ],
@@ -1922,6 +1918,128 @@
   [
    "worrying",
    "worry"
+  ],
+  [
+   "according",
+   "accord"
   ]
- ]
+ ],
+ "tokenizer": [
+  [
+   "In the 1870s, trains were slow.",
+   [
+    "In",
+    "the",
+    "trains",
+    "were",
+    "slow"
+   ]
+  ],
+  [
+   "Music of the '90s and the ’80s.",
+   [
+    "Music",
+    "of",
+    "the",
+    "and",
+    "the"
+   ]
+  ],
+  [
+   "By the 1990s' end, 1960s fashion returned.",
+   [
+    "By",
+    "the",
+    "end",
+    "fashion",
+    "returned"
+   ]
+  ],
+  [
+   "The 80s were loud; 1900s were not.",
+   [
+    "The",
+    "were",
+    "loud",
+    "were",
+    "not"
+   ]
+  ],
+  [
+   "It's 1870s-era music.",
+   [
+    "It's",
+    "era",
+    "music"
+   ]
+  ],
+  [
+   "She's here; the cats' toys, don't touch.",
+   [
+    "She's",
+    "here",
+    "the",
+    "cats",
+    "toys",
+    "don't",
+    "touch"
+   ]
+  ],
+  [
+   "Not decades: 1870 and 1990 and sixties.",
+   [
+    "Not",
+    "decades",
+    "and",
+    "and",
+    "sixties"
+   ]
+  ],
+  [
+   "rock-and-roll started in the 1950s.",
+   [
+    "rock-and-roll",
+    "started",
+    "in",
+    "the"
+   ]
+  ]
+ ],
+ "cefr": {
+  "manual": [
+   [
+    "according",
+    "B1"
+   ]
+  ],
+  "fallback": [
+   [
+    "alarming",
+    "alarm"
+   ],
+   [
+    "damaging",
+    "damage"
+   ],
+   [
+    "cleaning",
+    "clean"
+   ],
+   [
+    "bewildering",
+    "bewilder"
+   ],
+   [
+    "automated",
+    "automate"
+   ]
+  ],
+  "leadDefs": [
+   [
+    "according",
+    "prep.",
+    "根据"
+   ]
+  ]
+ }
 }

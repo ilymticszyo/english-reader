@@ -1,5 +1,5 @@
 {
-  "expectedPerLevel": 50,
+  "expectedPerLevel": 75,
   "levels": {
     "B1": { "words": [250, 350], "avgSentence": 15, "coverage": 0.97 },
     "B2": { "words": [400, 550], "avgSentence": 20, "coverage": 0.97 },

@@ -2,7 +2,9 @@
 
 纯静态的英语分级阅读网页：B1 / B2 / C1 三个级别，点词即查 ECDICT 中文词典（带词形还原、音标、浏览器 TTS 发音），生词本与阅读进度存在 `localStorage`。无后端、无账号。
 
-> 当前状态：**M3 第 2 批**——主流程 + 离线（Service Worker）+ 设置/备份/关于页，150 篇 AI 生成文章（B1 / B2 / C1 各 50 篇）。
+> 当前状态：**M3 第 3 批**——主流程 + 离线（Service Worker）+ 设置/备份/关于页，225 篇 AI 生成文章（B1 / B2 / C1 各 75 篇）。
+
+> 分词规则：年代写法（1870s、'90s、1920s）是**单个非词记号**：不计入字数与覆盖率，阅读器里也不可点击（不会再被拆成 `s`）。
 
 ## 快速开始
 
@@ -35,7 +37,7 @@ npm run screenshots
 
 ## 每批文章的工作流（M3 量产时用）
 
-1. 把新文章放进 `content/articles/`（`b1-006.md` …，frontmatter 同现有文章）。`build.config.json` 里的 `expectedPerLevel` 是每级的最低篇数（现为 50，随批次增加，M3 末尾改成 100）。
+1. 把新文章放进 `content/articles/`（`b1-006.md` …，frontmatter 同现有文章）。`build.config.json` 里的 `expectedPerLevel` 是每级的最低篇数（现为 75，随批次增加，M3 末尾改成 100）。
 2. `npm run build`。**只有这些会让构建失败**：文章元数据不合法 / id 或标题重复 / 某级别篇数不足 / 有词在 ECDICT 里完全查不到、也不在 `terms` 里（报错信息 `NO DEFINITION`）/ 构建期与运行时词元解析不一致。
 3. 打开 `reports/build-report.md`（每次构建都会重新生成，不进 git），逐项过一遍：
    - **Calibration flags**：词数、平均句长、词汇覆盖率（B1/B2 ≥ 97%，C1 ≥ 94%）不达标的文章。只做标记供人工复核，**不拒收**；决定是重写、放行还是调阈值（`build.config.json`）。
@@ -49,6 +51,8 @@ npm run screenshots
    - `lemma`：`{"number": "number", "are": "be"}`——形 → 词元（写成自己表示“它自己就是词元”）。
    - `lexicalizedIng`：词汇化的 -ing 名词（building、meeting、morning、feeling、painting、wedding、ceiling…）。这些词主卡显示它自己的词条，动词词元（build）的词条折叠在下方。**不在这个名单里的 -ing 词保持原行为（running → run）**；不做上下文词性判断。
    - `lexicalizedAdj`：词汇化的形容词性分词（tired、scared、boring、interested、excited、surprised、worried、complicated、amazing…）。机制与 `lexicalizedIng` 相同：主卡显示这个词自己的（形容词）词条，动词词元（scare）的词条折叠在下方，生词本以这个词本身为键；覆盖率按这个词自己的 CEFR 等级算。只收“形容词义明显占主导”的词；动词性分词（written、given、closed…）和 -ing 动名词（running…）不在其中，保持原行为。
+   - `cefr`：人工指定的 CEFR 等级（如 `"according": "B1"`），优先于词表。**回退规则**：词汇化词（`lexicalizedIng` / `lexicalizedAdj`）如果自己没有 CEFR 等级，覆盖率和词条徽章回退使用它的动词词元的等级（如 disappointed → disappoint）。
+   - `leadDefs`：给某个词条在最前面加一条释义（如 according 先显示“according to：根据…”，再显示动词 accord 的折叠词条）。
    - `terms`：ECDICT 没有的专名、生造或专业术语 → 一句中文释义。
 5. 改完重新 `npm run build`，再 `npm run test:lemma`。有新的易错词就补进 `tests/lemma-cases.json`。
 
@@ -57,7 +61,7 @@ npm run screenshots
 ```
 content/
   articles/*.md           文章源文件（frontmatter + 正文，段落以空行分隔）
-  lemma-overrides.json    所有人工修正的唯一入口：lemma / lexicalizedIng / lexicalizedAdj / terms
+  lemma-overrides.json    所有人工修正的唯一入口：lemma / lexicalizedIng / lexicalizedAdj / cefr / leadDefs / terms
 data-src/
   ecdict.csv              （gitignore，自动下载）
   cefr/                   CEFR-J 词表 + Octanove C1/C2 词表（用于词的 CEFR 等级）

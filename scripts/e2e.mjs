@@ -38,7 +38,7 @@ async function newPage(opts = {}) {
   page.errors = errors;
   return page;
 }
-const PER = 50; // articles per level in the current content batch
+const PER = 75; // articles per level in the current content batch
 const word = (page, text, nth = 0) => page.locator('.article-body .w', { hasText: new RegExp(`^${text}$`) }).nth(nth);
 const cardTitle = async (page) => (await page.locator('.card .card-title').innerText()).replace(/\s+/g, ' ').trim();
 const lum = (rgb) => {
@@ -389,7 +389,7 @@ try {
   check('scrolling to the end marks article read', await page.evaluate(() => JSON.parse(localStorage.getItem('ra:v1:progress'))['b2-005'].status === 'read'));
   await page.goto(url + '#/');
   await page.click('.tab[data-level="B2"]');
-  check('list shows 已读 status and level progress 1/50', (await page.locator('.card-item[data-id="b2-005"] .st-read').count()) === 1 && /1 \/ 50/.test(await page.locator('.progress-line').innerText()), await page.locator('.progress-line').innerText());
+  check('list shows 已读 status and level progress 1/75', (await page.locator('.card-item[data-id="b2-005"] .st-read').count()) === 1 && /1 \/ 75/.test(await page.locator('.progress-line').innerText()), await page.locator('.progress-line').innerText());
   await page.selectOption('select[aria-label="按阅读状态筛选"]', 'read');
   check('status filter (已读)', (await page.locator('.card-item').count()) === 1);
   await page.context().close();
@@ -511,6 +511,24 @@ try {
   await word(page, 'running').first().click();
   check('adjective whitelist leaves verbal "running" untouched (running ← run)', /^running ← run（/.test(await cardTitle(page)), await cardTitle(page));
   await page.keyboard.press('Escape');
+  // "according" (whitelist, manual CEFR B1): main card shows the "according to" sense first
+  await page.goto(url + '#/read/b2-013');
+  await page.waitForSelector('.article-body .w');
+  await word(page, 'according').first().click();
+  check('"according" → own entry, no "←"', (await cardTitle(page)) === 'according', await cardTitle(page));
+  const accDefs = await page.locator('.card > .card-defs').innerText();
+  check('"according": the "according to" sense (根据) comes first', /^\s*prep\.?[\s\S]*?根据/.test(accDefs) && accDefs.indexOf('根据；按照') >= 0 && accDefs.indexOf('根据；按照') < accDefs.indexOf('相应地'), accDefs);
+  check('"according": verb "accord" folded below, closed', (await page.locator('.card details.card-alt').count()) === 1 && (await page.locator('.card details.card-alt[open]').count()) === 0 && /动词「accord」/.test(await page.locator('.card details.card-alt summary').innerText()));
+  await page.keyboard.press('Escape');
+  // decade forms (1860s) are plain text: not clickable, not a stray "s" word
+  await page.goto(url + '#/read/b2-029');
+  await page.waitForSelector('.article-body .w');
+  const dec = await page.evaluate(() => ({
+    text: /the 1860s/.test(document.querySelector('.article-body').textContent),
+    sWords: [...document.querySelectorAll('.article-body .w')].filter((e) => e.textContent === 's').length,
+    inSpan: [...document.querySelectorAll('.article-body .w')].filter((e) => /\d/.test(e.textContent)).length,
+  }));
+  check('decade "1860s": stays as plain text, no clickable "s" and no clickable number', dec.text && dec.sWords === 0 && dec.inSpan === 0, JSON.stringify(dec));
   await page.goto(url + '#/read/b1-029');
   await page.waitForSelector('.article-body .w');
   const wl = await page.evaluate(async () => {

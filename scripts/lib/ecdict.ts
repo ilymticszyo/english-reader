@@ -104,13 +104,17 @@ export interface Overrides {
   lexicalized: Set<string>;
   /** names / terms missing from ECDICT: key as written -> Chinese note */
   terms: Record<string, string>;
+  /** manual CEFR level for a word (wins over the CEFR lists), e.g. according -> B1 */
+  cefr: Record<string, string>;
+  /** a definition shown first on the word's own card, before the ECDICT ones (e.g. the "according to" sense) */
+  leadDefs: Record<string, { pos: string; zh: string }>;
 }
 
 export function loadOverrides(): Overrides {
   const o = JSON.parse(readFileSync(resolve(ROOT, 'content/lemma-overrides.json'), 'utf8'));
   const ing = new Set<string>(o.lexicalizedIng ?? []);
   const adj = new Set<string>(o.lexicalizedAdj ?? []);
-  return { lemma: o.lemma ?? {}, lexicalizedIng: ing, lexicalizedAdj: adj, lexicalized: new Set<string>([...ing, ...adj]), terms: o.terms ?? {} };
+  return { lemma: o.lemma ?? {}, lexicalizedIng: ing, lexicalizedAdj: adj, lexicalized: new Set<string>([...ing, ...adj]), terms: o.terms ?? {}, cefr: o.cefr ?? {}, leadDefs: o.leadDefs ?? {} };
 }
 
 /** Raw ECDICT-based candidate lemmas for a word form (primary first); empty = the word is its own lemma. */
@@ -181,8 +185,10 @@ export function normalizePhonetic(p: string): string {
     .trim();
 }
 
-export function makeEntry(row: Row, cefr: Record<string, string>, key: string): DictEntry {
+export function makeEntry(row: Row, cefr: Record<string, string>, key: string, ov?: Overrides): DictEntry {
   const e: DictEntry = { d: parseDefs(row.translation) };
+  const lead = ov?.leadDefs[key];
+  if (lead) e.d = [{ ...lead }, ...e.d];
   const p = normalizePhonetic(row.phonetic);
   if (p) e.p = p;
   const c = cefr[key];
@@ -214,6 +220,31 @@ export function loadCefr(): Record<string, string> {
     for (const r of recs) add(r.headword, r.CEFR);
   }
   return out;
+}
+
+/**
+ * CEFR table used for coverage and the level badge:
+ *  1. manual levels from the override file's `cefr` section win over the CEFR lists;
+ *  2. a lexicalized word (whitelist) that has no CEFR level of its own falls back to the level of its verb lemma.
+ * Returns the whitelist words that got their level through the fallback (for the report and the tests).
+ */
+export function applyCefrOverrides(cefr: Record<string, string>, db: Db, ov: Overrides): { manual: string[]; fallback: [string, string][] } {
+  const manual: string[] = [];
+  for (const [w, lv] of Object.entries(ov.cefr)) {
+    if (!(lv in LEVEL_RANK)) throw new Error(`overrides.cefr: bad level for "${w}": ${lv}`);
+    cefr[w] = lv;
+    manual.push(w);
+  }
+  const fallback: [string, string][] = [];
+  for (const w of [...ov.lexicalized].sort()) {
+    if (cefr[w]) continue;
+    const alt = lexAlt(db, w);
+    if (alt && alt !== w && cefr[alt]) {
+      cefr[w] = cefr[alt];
+      fallback.push([w, alt]);
+    }
+  }
+  return { manual, fallback };
 }
 
 export interface BuildRes {

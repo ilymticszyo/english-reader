@@ -1,5 +1,5 @@
 {
-  "_readme": "THE single file for all manual fixes. Sections: 'lemma' = wrong/missing ECDICT lemma (form -> lemma; same word = treat as its own lemma). 'lexicalizedIng' = -ing words that are nouns in their own right: the main card shows the word's own entry and the verb lemma entry is folded below (running -> run is NOT in this list). 'lexicalizedAdj' = adjectival participles whose adjective sense dominates (tired, scared, boring, complicated…): same treatment (own adjective entry as the main card, verb entry folded below, vocab keyed on the word itself). Gerund -ing words not listed in either list keep resolving to the verb. 'terms' = names / coined or technical terms missing from ECDICT (key as written; value = short Chinese note). See README 'Per-batch workflow'.",
+  "_readme": "THE single file for all manual fixes. Sections: 'lemma' = wrong/missing ECDICT lemma (form -> lemma; same word = treat as its own lemma). 'lexicalizedIng' = -ing words that are nouns in their own right: the main card shows the word's own entry and the verb lemma entry is folded below (running -> run is NOT in this list). 'lexicalizedAdj' = adjectival participles whose adjective sense dominates (tired, scared, boring, complicated…): same treatment (own adjective entry as the main card, verb entry folded below, vocab keyed on the word itself). Gerund -ing words not listed in either list keep resolving to the verb. 'cefr' = manual CEFR level for a word (wins over the CEFR lists; e.g. according -> B1). A whitelist word (lexicalizedIng / lexicalizedAdj) that has no CEFR level of its own automatically uses its verb lemma's level for coverage. 'leadDefs' = a definition placed first on a word's own card, before the ECDICT ones (e.g. the 'according to' sense). 'terms' = names / coined or technical terms missing from ECDICT (key as written; value = short Chinese note). See README 'Per-batch workflow'.",
   "lemma": {
     "number": "number",
     "rent": "rent",
@@ -28,7 +28,10 @@
     "qubits": "qubit",
     "superblocks": "superblock",
     "supertasters": "supertaster",
-    "wearables": "wearable"
+    "wearables": "wearable",
+    "lenses": "lens",
+    "rebound": "rebound",
+    "sharper": "sharp"
   },
   "lexicalizedIng": [
     "accounting",
@@ -135,6 +138,7 @@
     "writing"
   ],
   "lexicalizedAdj": [
+    "according",
     "alarming",
     "amazed",
     "amazing",
@@ -222,6 +226,15 @@
     "worried",
     "worrying"
   ],
+  "cefr": {
+    "according": "B1"
+  },
+  "leadDefs": {
+    "according": {
+      "pos": "prep.",
+      "zh": "（according to）根据；按照…所说；依据"
+    }
+  },
   "terms": {
     "Mia": "人名（女），文中人物",
     "Osaka": "大阪，日本城市",
@@ -449,6 +462,71 @@
     "Madrid": "马德里",
     "Augustine": "奥古斯丁（人名）",
     "Austria's": "奥地利的",
-    "Jean-Jacques": "让-雅克（人名）"
+    "Jean-Jacques": "让-雅克（人名）",
+    "Italy": "意大利",
+    "Kenji": "人名（男），健二",
+    "Hokkaido": "北海道",
+    "cacao": "可可（树；豆）",
+    "Mei": "人名（女），梅",
+    "Clara": "人名（女），克拉拉",
+    "Korea": "韩国",
+    "Jack": "人名（男），杰克",
+    "Emma": "人名（女），艾玛",
+    "Mars": "火星",
+    "Lisa": "人名（女），丽莎",
+    "Edison": "爱迪生",
+    "Joseph": "约瑟夫（人名）",
+    "Swan": "斯旺（人名）",
+    "York": "约克（New York 的一部分）",
+    "Nora": "人名（女），诺拉",
+    "Ruth": "人名（女），露丝",
+    "Biscuit": "狗的名字，饼干",
+    "Ancel": "人名（男），安塞尔",
+    "Norman": "诺曼人的；诺曼的",
+    "Germanic": "日耳曼的；日耳曼语的",
+    "Shakespeare": "莎士比亚",
+    "ARPANET": "阿帕网（互联网前身）",
+    "Vint": "人名（男），温特",
+    "Cerf": "瑟夫（人名）",
+    "Bob": "人名（男），鲍勃",
+    "Kahn": "卡恩（人名）",
+    "TCP": "传输控制协议",
+    "IP": "网际协议",
+    "Switzerland": "瑞士",
+    "Tim": "人名（男），蒂姆",
+    "Berners": "伯纳斯（人名）",
+    "Lee": "李（人名）",
+    "Detroit": "底特律",
+    "Havana": "哈瓦那",
+    "Newton": "牛顿",
+    "Darwin": "达尔文",
+    "Einstein": "爱因斯坦",
+    "Rosalind": "人名（女），罗莎琳德",
+    "Franklin": "富兰克林（人名）",
+    "Marie": "人名（女），玛丽",
+    "Curie": "居里",
+    "Matilda": "人名（女），玛蒂尔达",
+    "Mesopotamia": "美索不达米亚",
+    "Egyptians": "古埃及人",
+    "Egyptian": "埃及的",
+    "Romans": "罗马人",
+    "Baghdad": "巴格达",
+    "Fibonacci": "斐波那契（人名）",
+    "Arabic": "阿拉伯的；阿拉伯语",
+    "Chile": "智利",
+    "Easterlin": "伊斯特林（人名）",
+    "Berlin": "柏林",
+    "Somali": "索马里人",
+    "Rwanda": "卢旺达",
+    "Kurds": "库尔德人",
+    "Himalayan": "喜马拉雅的",
+    "Africans": "非洲人",
+    "Warsaw": "华沙",
+    "Victorian": "维多利亚时代的",
+    "quaranta": "（意大利语）四十",
+    "Khaldun": "赫勒敦（14世纪阿拉伯学者）",
+    "Ibn": "伊本（阿拉伯人名中的“之子”）",
+    "Carnegie": "卡内基（美国钢铁大亨、慈善家）",
+    "Andrew": "安德鲁（人名）"
   }
 }
