@@ -1,0 +1,7 @@
+node_modules
+dist
+data-src/ecdict.csv
+public/data
+.DS_Store
+test-results
+reports

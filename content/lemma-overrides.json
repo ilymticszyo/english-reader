@@ -1,0 +1,17 @@
+{
+  "_comment": "Manual lemma fixes for words where ECDICT exchange data gives a wrong or ambiguous lemma. form -> lemma (same word = treat as its own lemma).",
+  "number": "number",
+  "rent": "rent",
+  "does": "do",
+  "evening": "evening",
+  "interesting": "interesting",
+  "tired": "tired",
+  "ground": "ground",
+  "are": "be",
+  "am": "be",
+  "feed": "feed",
+  "willing": "willing",
+  "wedding": "wedding",
+  "stranger": "stranger",
+  "clothes": "clothes"
+}
