@@ -265,7 +265,8 @@ mkdirSync(resolve(out, 'dict'), { recursive: true });
 const sorted = [...articles].sort((a, b) => LEVEL_RANK[a.level] - LEVEL_RANK[b.level] || a.id.localeCompare(b.id));
 const index: ArticleIndex = {
   schema: 1,
-  generatedAt: new Date().toISOString(),
+  // deterministic (no wall clock) so identical content gives an identical build / service-worker version
+  generatedAt: `${articles.map((a) => a.meta.createdAt).sort().at(-1) ?? '1970-01-01'}T00:00:00Z`,
   articles: sorted.map(({ id, level, title, topics, genre, wordCount, minutes, source }): ArticleMeta => ({ id, level, title, topics, genre, wordCount, minutes, source })),
 };
 const write = (p: string, data: unknown) => writeFileSync(resolve(out, p), JSON.stringify(data));
