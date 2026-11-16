@@ -54,6 +54,9 @@ export interface LookupResult {
   entry?: DictEntry;
   /** the clicked form's own entry (e.g. "left" the adjective), when different from the lemma */
   formEntry?: DictEntry;
+  /** lexicalized -ing noun: the verb lemma's entry, folded below the card */
+  altKey?: string;
+  altEntry?: DictEntry;
 }
 
 export function lookup(token: string): LookupResult {
@@ -61,7 +64,8 @@ export function lookup(token: string): LookupResult {
   if (!res) return { token, res: null, lemma: token.toLowerCase().replace(/['’]s$/, '') };
   const entry = entries[res.lemma];
   const formEntry = res.key !== res.lemma && Object.prototype.hasOwnProperty.call(entries, res.key) ? entries[res.key] : undefined;
-  return { token, res, lemma: res.lemma, entry, formEntry };
+  const altKey = entry?.alt && Object.prototype.hasOwnProperty.call(entries, entry.alt) ? entry.alt : undefined;
+  return { token, res, lemma: res.lemma, entry, formEntry, altKey, altEntry: altKey ? entries[altKey] : undefined };
 }
 
 export const getEntry = (k: string): DictEntry | undefined => entries[k];

@@ -2,7 +2,7 @@ import { clear, h, topicLabel } from '../dom.ts';
 import { loadIndex } from '../data.ts';
 import { LEVELS } from '../shared/types.ts';
 import type { ArticleMeta, Level } from '../shared/types.ts';
-import { getProgress, getSettings, getStatus, onChange, setSettings } from '../store.ts';
+import { getProgress, getSettings, getStatus, minutesOf, onChange, setSettings } from '../store.ts';
 import type { Status } from '../store.ts';
 
 const STATUS_LABEL: Record<Status, string> = { unread: '未读', reading: '在读', read: '已读' };
@@ -54,7 +54,7 @@ export async function mountList(root: HTMLElement): Promise<() => void> {
     return h('a', { class: 'card-item', role: 'listitem', href: `#/read/${a.id}`, dataset: { id: a.id } },
       h('div', { class: 'ci-top' }, h('span', { class: `badge lv lv-${a.level}` }, a.level), h('span', { class: `status st-${st}` }, STATUS_LABEL[st])),
       h('h2', { class: 'ci-title' }, a.title),
-      h('div', { class: 'ci-meta muted' }, `${a.wordCount} 词 · 约 ${a.minutes} 分钟`),
+      h('div', { class: 'ci-meta muted' }, `${a.wordCount} 词 · 约 ${minutesOf(a.wordCount)} 分钟`),
       h('div', { class: 'ci-topics' }, ...a.topics.map((t) => h('span', { class: 'chip' }, topicLabel(t)))),
     );
   };
@@ -92,5 +92,5 @@ export async function mountList(root: HTMLElement): Promise<() => void> {
     renderList();
   };
   renderAll();
-  return onChange((w) => (w === 'progress' || w === 'all') && renderAll());
+  return onChange((w) => (w === 'progress' || w === 'settings' || w === 'all') && renderAll());
 }

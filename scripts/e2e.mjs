@@ -230,7 +230,7 @@ try {
   await page.click('.toast-act');
   check('undo within 5s restores word', (await page.locator('.vocab-row[data-word="go"]').count()) === 1);
   // context -> back to original sentence
-  await page.locator('.vocab-row[data-word="go"] .linkbtn').click();
+  await page.locator('.vocab-row[data-word="go"] .linkbtn').first().click();
   await page.locator('.vocab-row[data-word="go"] .ctx').first().click();
   await page.waitForSelector('.article-body .w.flash');
   check('context click opens article & highlights sentence', page.url().includes('#/read/b1-002') && (await page.locator('.w.flash').count()) >= 5);
@@ -369,7 +369,7 @@ try {
   await page.goto(url + '#/read/b2-005');
   await page.waitForSelector('.article-body .w');
   check('opening marks "reading"', await page.evaluate(() => JSON.parse(localStorage.getItem('ra:v1:progress'))['b2-005'].status === 'reading'));
-  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight * 0.4));
+  await page.evaluate(() => window.scrollTo(0, 150)); // mid-article (the end of the text is not yet in view)
   await page.waitForTimeout(2300);
   const pr = await page.evaluate(() => JSON.parse(localStorage.getItem('ra:v1:progress'))['b2-005']);
   check('scroll fraction saved (fraction not pixels)', pr.scroll > 0.2 && pr.scroll < 1, JSON.stringify(pr));
@@ -377,7 +377,7 @@ try {
   await page.waitForSelector('.article-body .w');
   await page.waitForTimeout(400);
   const y1 = await page.evaluate(() => window.scrollY);
-  check('scroll position restored after reload', y1 > 200, `scrollY=${y1}`);
+  check('scroll position restored after reload', y1 > 100 && y1 < 220, `scrollY=${y1}`);
   await page.goto(url + '#/');
   await page.waitForSelector('.continue-card');
   check('"continue reading" card shown for in-progress article', /继续阅读/.test(await page.locator('.continue-card').innerText()));
@@ -461,6 +461,176 @@ try {
   check('sub-path: lookup works', (await cardTitle(page)) === 'went ← go（过去式）');
   check('sub-path: no failed requests', page.errors.length === 0, page.errors.join('; '));
   await page.context().close();
+
+  // ------------------------------------------------------------ M2: lexicalized -ing, labels, about, wpm
+  section('M2: lexicalized -ing nouns');
+  page = await newPage();
+  await page.goto(url + '#/read/b2-004');
+  await page.waitForSelector('.article-body .w');
+  await word(page, 'building').first().click();
+  check('"building" (whitelisted -ing noun) → main card is its own entry, no "←"', (await cardTitle(page)) === 'building', await cardTitle(page));
+  check('"building": verb "build" entry folded below (closed)', (await page.locator('.card details.card-alt').count()) === 1 && (await page.locator('.card details.card-alt[open]').count()) === 0 && /动词「build」/.test(await page.locator('.card details.card-alt summary').innerText()));
+  check('"building" own definition is the noun sense (建筑)', /建筑/.test(await page.locator('.card > .card-defs').innerText()));
+  await page.locator('.card details.card-alt summary').click();
+  check('expanding shows the verb entry (建造)', /建/.test(await page.locator('.card details.card-alt').innerText()));
+  check('vocab keyed by "building" (not "build")', await page.evaluate(() => 'building' in JSON.parse(localStorage.getItem('ra:v1:vocab')) && !('build' in JSON.parse(localStorage.getItem('ra:v1:vocab')))));
+  await page.keyboard.press('Escape');
+  await word(page, 'buildings').first().click();
+  check('"buildings" → buildings ← building（复数）', /^buildings ← building（.*复数.*）$/.test(await cardTitle(page)), await cardTitle(page));
+  await page.keyboard.press('Escape');
+  await word(page, 'morning').first().click();
+  check('"morning" → own entry, no arrow', (await cardTitle(page)) === 'morning');
+  await page.keyboard.press('Escape');
+  await page.goto(url + '#/read/b2-005');
+  await page.waitForSelector('.article-body .w');
+  await word(page, 'running').first().click();
+  check('non-whitelisted "running" still → running ← run', /^running ← run（/.test(await cardTitle(page)), await cardTitle(page));
+  await page.keyboard.press('Escape');
+  await word(page, 'heating').first().click();
+  check('"heating" (whitelisted) → heating', (await cardTitle(page)) === 'heating', await cardTitle(page));
+  await page.keyboard.press('Escape');
+  await page.goto(url + '#/read/c1-001');
+  await page.waitForSelector('.article-body .w');
+  await word(page, 'feeling').first().click();
+  check('"feeling" → own entry with "feel" folded', (await cardTitle(page)) === 'feeling' && (await page.locator('.card details.card-alt').count()) === 1);
+  await page.keyboard.press('Escape');
+  check('no console errors', page.errors.length === 0, page.errors.join('; '));
+
+  section('M2: labels, about page, reading speed');
+  await page.goto(url);
+  await page.waitForSelector('.card-item');
+  check('list page has no AI label anywhere', !/AI|生成/.test(await page.locator('main').innerText()));
+  await page.goto(url + '#/read/b1-001');
+  await page.waitForSelector('.article-body .w');
+  check('reader: exactly one small AI note, at the bottom (after nav), none in header', (await page.locator('.article-note').count()) === 1 && (await page.locator('.article-head').innerText()).indexOf('AI') < 0 && (await page.evaluate(() => { const n = document.querySelector('.article-note'); const nav = document.querySelector('.article-nav'); return !!(nav.compareDocumentPosition(n) & Node.DOCUMENT_POSITION_FOLLOWING); })));
+  check('reader: note text', /AI 生成的示例文章/.test(await page.locator('.article-note').innerText()));
+  await page.goto(url);
+  await page.waitForSelector('.site-footer a');
+  await page.click('.site-footer a');
+  await page.waitForSelector('.about');
+  const about = await page.locator('.about').innerText();
+  check('about page: Octanove + CC BY-SA 4.0', /Octanove/.test(about) && /CC BY-SA 4\.0/.test(about) && (await page.locator('.about a[href*="creativecommons.org/licenses/by-sa/4.0"]').count()) === 1);
+  check('about page: ECDICT (MIT) and CEFR-J credits', /ECDICT/.test(about) && /MIT/.test(about) && /CEFR-J/.test(about) && /Tono/.test(about) && (await page.locator('.about a[href*="skywind3000/ECDICT"]').count()) === 1 && (await page.locator('.about a[href*="cefr-j.org"]').count()) >= 1);
+  await page.goto(url + '#/settings');
+  await page.waitForSelector('.seg');
+  check('settings links to about page', (await page.locator('a[href="#/about"]').count()) >= 1);
+  await page.goto(url);
+  await page.waitForSelector('.card-item');
+  const mins0 = await page.locator('.card-item[data-id="b1-001"] .ci-meta').innerText();
+  await page.goto(url + '#/settings');
+  await page.click('.seg-btn[data-key="wpm"][data-value="120"]');
+  await page.goto(url);
+  await page.waitForSelector('.card-item');
+  const mins1 = await page.locator('.card-item[data-id="b1-001"] .ci-meta').innerText();
+  check('reading-time setting changes estimates (200 wpm → 120 wpm)', /约 2 分钟/.test(mins0) && /约 3 分钟/.test(mins1), `${mins0} | ${mins1}`);
+  await page.goto(url + '#/settings');
+  await page.click('#reset-settings');
+  check('reset restores 200 wpm', await page.evaluate(() => JSON.parse(localStorage.getItem('ra:v1:settings')).wpm === 200));
+  check('settings shows version', /\d+\.\d+\.\d+\+[0-9a-f]{8}/.test(await page.locator('#version').innerText()), await page.locator('#version').innerText());
+  check('settings: no backup yet message', /还没有导出过备份/.test(await page.locator('#last-backup').innerText()));
+  const [dl2] = await Promise.all([page.waitForEvent('download'), page.click('#export-btn')]);
+  void dl2;
+  await page.waitForTimeout(100);
+  check('settings: export from settings page + "last backup" time shown', /上次导出备份/.test(await page.locator('#last-backup').innerText()));
+  await page.context().close();
+
+  section('M2: vocabulary book with 1000 words, full card from the vocab page');
+  page = await newPage();
+  await page.goto(url + '#/settings');
+  await page.waitForSelector('.seg');
+  await page.evaluate(() => {
+    const v = {};
+    for (let i = 0; i < 1000; i++) v['word' + String(i).padStart(4, '0')] = { addedAt: i, lastAt: i, count: (i % 7) + 1, mastered: i % 10 === 0, snap: { p: 'wɜːd', zh: 'n. 单词 ' + i, cefr: ['A1', 'A2', 'B1', 'B2', 'C1'][i % 5] }, ctx: [{ a: 'b1-001', v: 1, p: 0, s: 'It had been raining since the morning when Mia arrived in Osaka.', form: 'x', at: i }] };
+    v.go = { addedAt: 5000, lastAt: 5000, count: 1, mastered: false, snap: { zh: 'vi. 去' }, ctx: [] };
+    localStorage.setItem('ra:v1:vocab', JSON.stringify(v));
+  });
+  await page.goto(url + '#/words');
+  await page.reload();
+  await page.waitForSelector('.vocab-row');
+  check('1000 words: summary correct', /共 1001 个生词，其中已掌握 100 个/.test(await page.locator('#vocab-summary').innerText()), await page.locator('#vocab-summary').innerText());
+  check('1000 words: only a page of rows in the DOM (≤ 50)', (await page.locator('.vocab-row').count()) <= 50, `${await page.locator('.vocab-row').count()}`);
+  await page.evaluate(() => { location.hash = '#/settings'; });
+  await page.waitForSelector('#usage');
+  const renderMs = await page.evaluate(() => new Promise((res) => { const s = performance.now(); location.hash = '#/words'; const iv = setInterval(() => { if (document.querySelector('.vocab-row')) { clearInterval(iv); res(performance.now() - s); } }, 1); }));
+  check('1000 words: vocab page renders < 300ms', renderMs < 300, `${Math.round(renderMs)}ms`);
+  await page.fill('input[aria-label="搜索生词"]', 'word05');
+  check('1000 words: search instant & correct', (await page.locator('.vocab-row').count()) <= 50 && /当前显示 \d+ 个/.test(await page.locator('#vocab-summary').innerText()));
+  await page.fill('input[aria-label="搜索生词"]', '');
+  await page.click('.more button');
+  check('"show more" pages in another 50', (await page.locator('.vocab-row').count()) === 100);
+  const scrollMs = await page.evaluate(async () => { const t = performance.now(); for (let i = 0; i < 10; i++) { window.scrollTo(0, document.documentElement.scrollHeight * (i / 10)); await new Promise((r) => requestAnimationFrame(r)); } return (performance.now() - t) / 10; });
+  check('1000 words: scrolling frame time < 20ms avg', scrollMs < 20, `${scrollMs.toFixed(1)}ms/frame`);
+  check('no storage warning below 4MB', await page.locator('.warn-box').isHidden());
+  // full card (D6): dictionary not loaded on this fresh page load
+  await page.fill('input[aria-label="搜索生词"]', 'go');
+  await page.waitForSelector('.vocab-row[data-word="go"]');
+  const countBefore = await page.evaluate(() => JSON.parse(localStorage.getItem('ra:v1:vocab')).go.count);
+  await page.locator('.vocab-row[data-word="go"] .card-btn').click();
+  await page.waitForSelector('.card');
+  check('vocab page: "词典卡片" opens the full card (lazy-loads dictionary)', (await cardTitle(page)) === 'go' && (await page.locator('.card .card-defs .def').count()) >= 1 && (await page.locator('.card .badge.cefr').count()) === 1);
+  check('...and does not count as a new lookup', await page.evaluate(() => JSON.parse(localStorage.getItem('ra:v1:vocab')).go.count) === countBefore);
+  check('...speak button works from the card', (await page.locator('.card .speak').count()) === 1);
+  await page.keyboard.press('Escape');
+  await page.context().close();
+
+  // ------------------------------------------------------------ offline (service worker)
+  section('Offline (service worker), root and sub-path');
+  for (const [label, base] of [['root', url], ['sub-path /sub/english-reader/', sub.url]]) {
+    page = await newPage();
+    await page.goto(base);
+    await page.waitForSelector('.card-item');
+    await page.waitForFunction(() => navigator.serviceWorker && navigator.serviceWorker.controller, null, { timeout: 15000 });
+    const cacheInfo = await page.evaluate(async () => { const keys = await caches.keys(); const c = await caches.open(keys[0]); return { keys, n: (await c.keys()).length }; });
+    check(`${label}: service worker active, precache has all files`, cacheInfo.keys.length === 1 && /^english-reader-\d+\.\d+\.\d+\+/.test(cacheInfo.keys[0]) && cacheInfo.n >= 25, JSON.stringify(cacheInfo));
+    const scope = await page.evaluate(async () => (await navigator.serviceWorker.getRegistration()).scope);
+    check(`${label}: SW scope is the app folder`, scope === base, scope);
+    await page.context().setOffline(true);
+    await page.reload();
+    await page.waitForSelector('.card-item');
+    check(`${label}: offline reload shows the article list`, (await page.locator('.card-item').count()) === 5);
+    await page.click('.tab[data-level="C1"]');
+    await page.click('.card-item[data-id="c1-003"]');
+    await page.waitForSelector('.article-body .w');
+    await word(page, 'Studies').count();
+    await word(page, 'manuscripts').first().click();
+    check(`${label}: offline lookup works (C1 article, all dictionary shards)`, /^manuscripts ← manuscript（/.test(await cardTitle(page)), await cardTitle(page));
+    await page.keyboard.press('Escape');
+    await page.goto(base + '#/words');
+    await page.waitForSelector('h1');
+    check(`${label}: offline vocab page works`, /生词本/.test(await page.locator('h1').innerText()));
+    await page.goto(base + '#/settings');
+    await page.waitForSelector('#offline');
+    await page.waitForFunction(() => /已缓存/.test(document.querySelector('#offline').textContent), null, { timeout: 5000 });
+    check(`${label}: settings shows offline ready`, /已缓存/.test(await page.locator('#offline').innerText()));
+    await page.context().setOffline(false);
+    await page.context().close();
+  }
+
+  section('Offline update: a new build replaces the old cache');
+  {
+    const { cpSync, rmSync: rm2, readFileSync: rf, writeFileSync: wf } = await import('node:fs');
+    const tmp = '/tmp/er-dist-update';
+    rm2(tmp, { recursive: true, force: true });
+    cpSync(resolve(ROOT, 'dist'), tmp, { recursive: true });
+    const upd = await serve(tmp);
+    page = await newPage();
+    await page.goto(upd.url);
+    await page.waitForSelector('.card-item');
+    await page.waitForFunction(() => navigator.serviceWorker.controller, null, { timeout: 15000 });
+    const oldKeys = await page.evaluate(() => caches.keys());
+    const swText = rf(`${tmp}/sw.js`, 'utf8').replace(/const VERSION = '[^']+'/, "const VERSION = '9.9.9+newbuild'");
+    wf(`${tmp}/sw.js`, swText);
+    wf(`${tmp}/version.json`, JSON.stringify({ version: '9.9.9+newbuild', files: 26, builtAt: new Date().toISOString() }));
+    await page.reload();
+    for (let i = 0; i < 60; i++) { if ((await page.evaluate(() => caches.keys())).join() === 'english-reader-9.9.9+newbuild') break; await page.waitForTimeout(250); }
+    const newKeys = await page.evaluate(() => caches.keys());
+    check('new SW version installs its own cache and deletes the old one', oldKeys.length === 1 && newKeys.length === 1 && newKeys[0] === 'english-reader-9.9.9+newbuild', `${oldKeys} → ${newKeys}`);
+    await page.reload();
+    await page.waitForSelector('.card-item');
+    check('app still works after the update (offline)', await (async () => { await page.context().setOffline(true); await page.reload(); await page.waitForSelector('.card-item'); return (await page.locator('.card-item').count()) === 5; })());
+    await page.context().close();
+    upd.server.close();
+  }
 } finally {
   await browser.close();
   server.close();

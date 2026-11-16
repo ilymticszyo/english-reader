@@ -25,3 +25,13 @@ export function speak(word: string) {
   u.rate = 0.9;
   speechSynthesis.speak(u);
 }
+
+/** null = unknown yet (voices load asynchronously in some browsers) */
+export function hasEnglishVoice(): boolean | null {
+  if (!ttsSupported) return false;
+  const v = speechSynthesis.getVoices();
+  return v.length ? v.some((x) => x.lang.toLowerCase().startsWith('en')) : null;
+}
+export function onVoicesChanged(fn: () => void) {
+  if (ttsSupported) speechSynthesis.addEventListener?.('voiceschanged', fn);
+}

@@ -1,18 +1,19 @@
 {
   "name": "english-reader",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "Static graded-reading site (B1/B2/C1) with ECDICT popup dictionary",
   "scripts": {
     "data": "node scripts/build-data.ts",
     "dev": "npm run data && vite",
-    "build": "npm run data && tsc --noEmit && vite build",
+    "build": "npm run data && tsc --noEmit && vite build && node scripts/make-sw.mjs",
     "preview": "vite preview",
     "test:lemma": "node scripts/test-lemma.ts",
     "test:e2e": "node scripts/e2e.mjs",
     "screenshots": "node scripts/screenshots.mjs",
-    "test": "npm run test:lemma && npm run test:e2e"
+    "test": "npm run test:lemma && npm run test:e2e",
+    "package": "npm run build && node scripts/package-zip.mjs"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",

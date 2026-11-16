@@ -3,6 +3,8 @@ import { clear, h } from './dom.ts';
 import { closeCard } from './popup.ts';
 import { parseHash } from './router.ts';
 import { applyAppearance, getSettings, setSettings } from './store.ts';
+import { mountAbout } from './views/about.ts';
+import { registerSW } from './pwa.ts';
 import { mountList } from './views/list.ts';
 import { mountReader } from './views/reader.ts';
 import { mountSettings } from './views/settings.ts';
@@ -23,7 +25,9 @@ const nav = h('nav', { class: 'topnav', 'aria-label': '主导航' },
       syncTheme();
     } })));
 const main = h('main', { id: 'main', class: 'main' });
-app.append(nav, main);
+const footer = h('footer', { class: 'site-footer muted small' }, h('a', { href: '#/about' }, '关于与致谢'), ' · 数据：ECDICT、CEFR-J、Octanove');
+app.append(nav, main, footer);
+registerSW();
 
 function syncTheme() {
   const t = getSettings().theme;
@@ -55,6 +59,7 @@ async function render() {
     if (route.name === 'read') c = await mountReader(view, route.id!, route.query);
     else if (route.name === 'words') c = mountWords(view);
     else if (route.name === 'settings') c = mountSettings(view);
+    else if (route.name === 'about') c = mountAbout(view);
     else {
       window.scrollTo({ top: 0 });
       c = await mountList(view);
@@ -66,7 +71,7 @@ async function render() {
   }
   if (my !== token) c(); // a newer navigation superseded us
   else cleanup = c;
-  if (route.name === 'words' || route.name === 'settings') window.scrollTo({ top: 0 });
+  if (route.name === 'words' || route.name === 'settings' || route.name === 'about') window.scrollTo({ top: 0 });
 }
 window.addEventListener('hashchange', render);
 render();

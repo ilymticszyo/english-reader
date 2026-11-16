@@ -48,6 +48,8 @@ export interface DictEntry {
   ex?: Record<string, string>;
   /** proper noun / whitelist entry */
   proper?: boolean;
+  /** lexicalized -ing noun: key of the verb lemma entry folded below this card */
+  alt?: string;
 }
 
 /** form -> lemma */

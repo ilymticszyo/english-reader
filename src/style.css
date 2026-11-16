@@ -197,3 +197,12 @@ html[data-theme='dark'] .star.on { color: #ffc84a; }
   .cards { grid-template-columns: 1fr; }
 }
 @media (prefers-reduced-motion: reduce) { .card.sheet { animation: none; } }
+
+.site-footer { text-align: center; padding: 16px 16px 32px; }
+.article-note { margin-top: 20px; text-align: center; }
+.vr-links { display: flex; gap: 16px; flex-wrap: wrap; }
+.warn-box { margin: 8px 0; padding: 10px 12px; border: 1px solid var(--danger); border-radius: 10px; color: var(--danger); }
+.backup-note { margin-bottom: 8px; }
+.about h2 { font-size: 1.1rem; margin: 1.4em 0 0.4em; }
+.about p, .about li { max-width: 70ch; }
+.about li { margin-bottom: 10px; }

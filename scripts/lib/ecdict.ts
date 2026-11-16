@@ -1,12 +1,16 @@
+import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { parse } from 'csv-parse/sync';
 import { LEVEL_RANK } from '../../src/shared/types.ts';
-import { candidateKeys } from '../../src/shared/text.ts';
+import { candidateKeys, suffixCandidates } from '../../src/shared/text.ts';
 import type { DictEntry, DictDef } from '../../src/shared/types.ts';
 
 export const ROOT = resolve(import.meta.dirname, '../..');
-export const ECDICT_URL = 'https://raw.githubusercontent.com/skywind3000/ECDICT/master/ecdict.csv';
+// Pinned to a commit so builds are reproducible; sha256 is verified after download.
+export const ECDICT_COMMIT = '39cfb9672c0906b63569e0453c2e6abfb9ab182a';
+export const ECDICT_URL = `https://raw.githubusercontent.com/skywind3000/ECDICT/${ECDICT_COMMIT}/ecdict.csv`;
+export const ECDICT_SHA256 = 'd1ecbdf9ee2b920afb6f430ca6b6bb9f559588cf0dff86e04bd255f9390843cc';
 
 export interface Row {
   word: string;
@@ -26,8 +30,11 @@ export async function ensureEcdict(): Promise<string> {
     console.log(`[data] ECDICT not found, downloading ${ECDICT_URL} (~66MB) ...`);
     const res = await fetch(ECDICT_URL);
     if (!res.ok) throw new Error(`download failed: ${res.status}`);
+    const buf = Buffer.from(await res.arrayBuffer());
+    const sum = createHash('sha256').update(buf).digest('hex');
+    if (sum !== ECDICT_SHA256) throw new Error(`ECDICT checksum mismatch: ${sum}`);
     mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(path, Buffer.from(await res.arrayBuffer()));
+    writeFileSync(path, buf);
   }
   return path;
 }
@@ -86,11 +93,21 @@ export function loadDb(path: string): Db {
 
 const rank = (r?: Row) => (r ? (r.frq > 0 ? r.frq : r.bnc > 0 ? r.bnc : 1e9) : 1e9);
 
-/** Candidate lemmas for a word form (primary first); empty = the word is its own lemma. */
-export function lemmasOf(db: Db, form: string, overrides: Record<string, string> = {}): string[] {
-  if (Object.prototype.hasOwnProperty.call(overrides, form)) {
-    return overrides[form] === form ? [] : [overrides[form]];
-  }
+export interface Overrides {
+  /** form -> lemma (same word = own lemma) */
+  lemma: Record<string, string>;
+  lexicalizedIng: Set<string>;
+  /** names / terms missing from ECDICT: key as written -> Chinese note */
+  terms: Record<string, string>;
+}
+
+export function loadOverrides(): Overrides {
+  const o = JSON.parse(readFileSync(resolve(ROOT, 'content/lemma-overrides.json'), 'utf8'));
+  return { lemma: o.lemma ?? {}, lexicalizedIng: new Set<string>(o.lexicalizedIng ?? []), terms: o.terms ?? {} };
+}
+
+/** Raw ECDICT-based candidate lemmas for a word form (primary first); empty = the word is its own lemma. */
+export function rawLemmas(db: Db, form: string): string[] {
   const out: string[] = [];
   const own = db.rows.get(form);
   if (own?.exchange) {
@@ -100,6 +117,20 @@ export function lemmasOf(db: Db, form: string, overrides: Record<string, string>
   const rev = [...(db.reverse.get(form) ?? [])].filter((l) => db.rows.has(l)).sort((a, b) => rank(db.rows.get(a)) - rank(db.rows.get(b)));
   for (const l of rev) if (!out.includes(l)) out.push(l);
   return out;
+}
+
+const has = (o: object, k: string) => Object.prototype.hasOwnProperty.call(o, k);
+
+/** Candidate lemmas after manual overrides (lemma map, lexicalized -ing nouns). Empty = own lemma. */
+export function lemmasOf(db: Db, form: string, ov: Overrides): string[] {
+  if (has(ov.lemma, form)) return ov.lemma[form] === form ? [] : [ov.lemma[form]];
+  if (ov.lexicalizedIng.has(form)) return [];
+  return rawLemmas(db, form);
+}
+
+/** For a lexicalized -ing noun: the verb lemma that is folded below the noun card (if ECDICT has one). */
+export function lexAlt(db: Db, key: string): string | undefined {
+  return rawLemmas(db, key)[0];
 }
 
 const INFLECTION_NOTE = /过去式|过去分词|现在分词|复数|单数|比较级|最高级|的变形|ing形式|的ing|第三人称/;
@@ -182,16 +213,28 @@ export interface BuildRes {
   key: string;
   lemma: string;
   kind: 'proper' | 'dict';
+  /** how the lemma was decided */
+  via: 'term' | 'normal' | 'override' | 'lexicalized' | 'fallback' | 'hyphen-part';
 }
 
-/** Build-time resolution of a clicked token: whitelist -> ECDICT lemma (exchange field) -> own headword. */
-export function resolveForBuild(token: string, db: Db, proper: Record<string, string>, overrides: Record<string, string>): BuildRes | null {
-  for (const c of candidateKeys(token)) {
-    if (Object.prototype.hasOwnProperty.call(proper, c)) return { key: c, lemma: c, kind: 'proper' };
+/** Build-time resolution of a clicked token: terms whitelist -> manual lemma -> ECDICT lemma (exchange) -> own headword -> suffix fallback. */
+export function resolveForBuild(token: string, db: Db, ov: Overrides): BuildRes | null {
+  const cands = candidateKeys(token);
+  const hyphen = token.includes('-');
+  for (const [i, c] of cands.entries()) {
+    const part = hyphen && c.toLowerCase() !== token.replace(/’/g, "'").toLowerCase();
+    void i;
+    if (has(ov.terms, c)) return { key: c, lemma: c, kind: 'proper', via: 'term' };
     const lc = c.toLowerCase();
-    const lem = lemmasOf(db, lc, overrides);
-    if (lem.length) return { key: lc, lemma: lem[0], kind: 'dict' };
-    if (db.rows.has(lc)) return { key: lc, lemma: lc, kind: 'dict' };
+    const lem = lemmasOf(db, lc, ov);
+    const via = has(ov.lemma, lc) ? 'override' : ov.lexicalizedIng.has(lc) ? 'lexicalized' : 'normal';
+    if (lem.length) return { key: lc, lemma: lem[0], kind: 'dict', via: part ? 'hyphen-part' : via };
+    if (db.rows.has(lc)) return { key: lc, lemma: lc, kind: 'dict', via: part ? 'hyphen-part' : via };
+  }
+  for (const c of cands) {
+    for (const s of suffixCandidates(c)) {
+      if (db.rows.has(s)) return { key: c.toLowerCase(), lemma: s, kind: 'dict', via: 'fallback' };
+    }
   }
   return null;
 }

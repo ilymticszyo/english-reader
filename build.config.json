@@ -1,9 +1,9 @@
 {
   "expectedPerLevel": 5,
   "levels": {
-    "B1": { "words": [250, 350], "avgSentence": 15, "coverage": 0.95 },
-    "B2": { "words": [400, 550], "avgSentence": 20, "coverage": 0.92 },
-    "C1": { "words": [600, 800], "avgSentence": 26, "coverage": 0.90 }
+    "B1": { "words": [250, 350], "avgSentence": 15, "coverage": 0.97 },
+    "B2": { "words": [400, 550], "avgSentence": 20, "coverage": 0.97 },
+    "C1": { "words": [600, 800], "avgSentence": 26, "coverage": 0.94 }
   },
   "topics": ["daily-life", "travel", "food", "health", "education", "work", "technology", "environment", "science", "culture", "society", "history"],
   "wordsPerMinute": 200

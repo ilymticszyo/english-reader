@@ -3,7 +3,7 @@ import { ensureDict, loadArticle, loadIndex, lookup } from '../data.ts';
 import { closeCard, showCard } from '../popup.ts';
 import { splitSentences, tokenize } from '../shared/text.ts';
 import type { Article } from '../shared/types.ts';
-import { getProgress, getSettings, getStatus, isActiveWord, onChange, setProgress, setSettings } from '../store.ts';
+import { getProgress, getSettings, getStatus, isActiveWord, minutesOf, onChange, setProgress, setSettings } from '../store.ts';
 
 export async function mountReader(root: HTMLElement, id: string, query: URLSearchParams): Promise<() => void> {
   root.append(h('p', { class: 'muted' }, '加载中…'));
@@ -55,9 +55,8 @@ export async function mountReader(root: HTMLElement, id: string, query: URLSearc
     h('h1', { class: 'article-title' }, article.title),
     h('div', { class: 'article-meta muted' },
       h('span', { class: `badge lv lv-${article.level}` }, article.level),
-      `${article.wordCount} 词 · 约 ${article.minutes} 分钟`,
+      `${article.wordCount} 词 · 约 ${minutesOf(article.wordCount)} 分钟`,
       article.topics.map((t) => h('span', { class: 'chip' }, topicLabel(t)))),
-    h('div', { class: 'article-note muted' }, article.meta.source === 'ai-generated' ? '🤖 AI 生成示例文章' : article.meta.source),
     h('div', { class: 'article-tools' }, fsDown, fsUp, themeBtn, statusBtn),
   );
 
@@ -67,7 +66,8 @@ export async function mountReader(root: HTMLElement, id: string, query: URLSearc
   );
   const endMarker = h('div', { class: 'end-marker', 'aria-hidden': 'true' });
   const statusBtn2 = h('button', { class: 'btn', type: 'button', onclick: () => statusBtn.click() });
-  root.append(h('article', { class: 'reader' }, head, body, endMarker, h('div', { class: 'article-foot' }, statusBtn2), nav));
+  root.append(h('article', { class: 'reader' }, head, body, endMarker, h('div', { class: 'article-foot' }, statusBtn2), nav,
+    article.meta.source === 'ai-generated' ? h('p', { class: 'article-note muted small' }, '本文为 AI 生成的示例文章。') : null));
 
   // ---------- body with clickable words ----------
   const renderBody = () => {

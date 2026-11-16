@@ -99,7 +99,7 @@ function entryBody(entry: DictEntry): HTMLElement[] {
   return out;
 }
 
-export function showCard(anchor: HTMLElement, token: string, ctx: VocabCtx | null, result?: LookupResult) {
+export function showCard(anchor: HTMLElement, token: string, ctx: VocabCtx | null, result?: LookupResult, record = true) {
   closeCard();
   const r = result ?? lookup(token);
   const { entry, formEntry, res } = r;
@@ -107,7 +107,7 @@ export function showCard(anchor: HTMLElement, token: string, ctx: VocabCtx | nul
   const settings = getSettings();
 
   // collect on lookup
-  recordLookup(lemma, snapshotOf(entry), ctx, settings.autoCollect);
+  if (record) recordLookup(lemma, snapshotOf(entry), ctx, settings.autoCollect);
 
   const showForm = !!res && res.key !== res.lemma;
   const card = h('div', { class: 'card', role: 'dialog', 'aria-label': `词典：${lemma}`, tabindex: '-1' });
@@ -164,6 +164,13 @@ export function showCard(anchor: HTMLElement, token: string, ctx: VocabCtx | nul
     const det = h('details', { class: 'card-own' }, h('summary', null, `「${token}」本身的词条`));
     if (formEntry.p) det.append(h('div', { class: 'card-phon' }, `/${formEntry.p}/`));
     det.append(...entryBody(formEntry));
+    card.append(det);
+  }
+
+  if (r.altEntry && r.altKey) {
+    const det = h('details', { class: 'card-own card-alt' }, h('summary', null, `动词「${r.altKey}」的词条`));
+    if (r.altEntry.p) det.append(h('div', { class: 'card-phon' }, `/${r.altEntry.p}/`));
+    det.append(...entryBody(r.altEntry));
     card.append(det);
   }
 

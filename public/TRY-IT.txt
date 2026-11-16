@@ -1,0 +1,19 @@
+English Reader — how to try this build
+======================================
+
+This is a static site. It must be served over http(s); double-clicking index.html (file://) will NOT work,
+because the page loads its data with fetch() and uses a Service Worker.
+
+Option A (any computer with Python 3):
+    cd <this folder>
+    python3 -m http.server 8080
+    open http://localhost:8080/
+
+Option B (Node):
+    npx serve .        # or any static file server
+
+Option C: upload the whole folder to any static host with HTTPS (GitHub Pages, Cloudflare Pages, Netlify).
+It works at the site root and under a sub-path such as https://you.github.io/english-reader/ without changes.
+
+After the first visit the site caches everything and works offline (Settings page shows the status).
+Your vocabulary book and progress live in this browser only: use Settings -> export to back them up.

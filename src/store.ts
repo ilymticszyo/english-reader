@@ -13,6 +13,8 @@ export interface Settings {
   autoMarkRead: boolean;
   highlightKnown: boolean;
   lastLevel: Level;
+  /** reading speed for the estimated reading time (words per minute) */
+  wpm: number;
 }
 export const DEFAULT_SETTINGS: Settings = {
   fontSize: 1,
@@ -22,7 +24,10 @@ export const DEFAULT_SETTINGS: Settings = {
   autoMarkRead: true,
   highlightKnown: true,
   lastLevel: 'B1',
+  wpm: 200,
 };
+export const WPM_OPTIONS = [120, 160, 200, 250, 300];
+export const minutesOf = (wordCount: number) => Math.max(1, Math.ceil(wordCount / (getSettings().wpm || 200)));
 
 export type Status = 'unread' | 'reading' | 'read';
 export interface Progress {
@@ -86,6 +91,11 @@ let settings: Settings = { ...DEFAULT_SETTINGS, ...read<Partial<Settings>>('sett
 let progress: ProgressMap = read<ProgressMap>('progress', {});
 let vocab: VocabMap = read<VocabMap>('vocab', {});
 if (!localStorage.getItem(PREFIX + 'meta')) write('meta', { schema: SCHEMA, createdAt: Date.now() });
+export const getMeta = () => read<{ schema: number; createdAt: number; lastBackupAt?: number }>('meta', { schema: SCHEMA, createdAt: 0 });
+export function markBackup() {
+  write('meta', { ...getMeta(), lastBackupAt: Date.now() });
+  emit('settings');
+}
 
 export const getSettings = () => settings;
 export function setSettings(patch: Partial<Settings>) {
@@ -233,6 +243,7 @@ export function importBackup(b: Backup, mode: 'merge' | 'overwrite') {
   emit('all');
 }
 
+export const STORAGE_WARN_BYTES = 4 * 1024 * 1024;
 export function storageUsage(): number {
   let n = 0;
   for (let i = 0; i < localStorage.length; i++) {
