@@ -686,10 +686,6 @@
    "crisis"
   ],
   [
-   "bacteria",
-   "bacterium"
-  ],
-  [
    "halves",
    "half"
   ],
@@ -1042,10 +1038,6 @@
    "can"
   ],
   [
-   "bacteria",
-   "bacterium"
-  ],
-  [
    "analyses",
    "analysis"
   ],
@@ -1383,6 +1375,10 @@
   [
    "burning",
    "burn"
+  ],
+  [
+   "misunderstanding",
+   "misunderstand"
   ]
  ],
  "verbalIng": [
@@ -2042,6 +2038,18 @@
   [
    "outgoing",
    "outgo"
+  ],
+  [
+   "centralised",
+   "centralise"
+  ],
+  [
+   "crooked",
+   "crook"
+  ],
+  [
+   "patronising",
+   "patronise"
   ]
  ],
  "tokenizer": [
@@ -2198,6 +2206,10 @@
   [
    "later",
    "late"
+  ],
+  [
+   "bacteria",
+   "bacterium"
   ]
  ]
 }
