@@ -42,7 +42,7 @@ export function mountWords(root: HTMLElement): () => void {
   function row(lemma: string, it: VocabItem): HTMLElement {
     const ctxBox = h('div', { class: 'ctx-box', hidden: true });
     for (const c of [...it.ctx].reverse()) {
-      ctxBox.append(h('a', { class: 'ctx', href: `#/read/${c.a}?p=${c.p}&s=${encodeURIComponent(c.s)}`, title: '回到原文' },
+      ctxBox.append(h('a', { class: 'ctx', href: `#/${c.a.startsWith('cl-') ? 'classics' : 'read'}/${c.a}?p=${c.p}&s=${encodeURIComponent(c.s)}`, title: '回到原文' },
         h('span', null, c.s), h('span', { class: 'muted small' }, ` — ${c.a}`)));
     }
     if (!it.ctx.length) ctxBox.append(h('div', { class: 'muted small' }, '暂无语境'));

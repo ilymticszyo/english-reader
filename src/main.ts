@@ -5,6 +5,8 @@ import { parseHash } from './router.ts';
 import { applyAppearance, getSettings, setSettings } from './store.ts';
 import { mountAbout } from './views/about.ts';
 import { registerSW } from './pwa.ts';
+import { mountClassicReader } from './views/classic-reader.ts';
+import { mountClassics } from './views/classics.ts';
 import { mountList } from './views/list.ts';
 import { mountReader } from './views/reader.ts';
 import { mountSettings } from './views/settings.ts';
@@ -14,9 +16,10 @@ applyAppearance();
 
 const app = document.getElementById('app')!;
 const nav = h('nav', { class: 'topnav', 'aria-label': '主导航' },
-  h('a', { class: 'brand', href: '#/' }, '📖 English Reader'),
+  h('a', { class: 'brand', href: '#/', 'aria-label': 'English Reader 首页' }, h('span', { 'aria-hidden': 'true' }, '📖'), h('span', { class: 'brand-txt' }, ' English Reader')),
   h('div', { class: 'navlinks' },
     h('a', { href: '#/', dataset: { nav: 'list' } }, '文章'),
+    h('a', { href: '#/classics', dataset: { nav: 'classics' } }, '名著'),
     h('a', { href: '#/words', dataset: { nav: 'words' } }, '生词本'),
     h('a', { href: '#/settings', dataset: { nav: 'settings' } }, '设置'),
     h('button', { class: 'iconbtn', type: 'button', id: 'nav-theme', 'aria-label': '切换主题', onclick: () => {
@@ -25,7 +28,7 @@ const nav = h('nav', { class: 'topnav', 'aria-label': '主导航' },
       syncTheme();
     } })));
 const main = h('main', { id: 'main', class: 'main' });
-const footer = h('footer', { class: 'site-footer muted small' }, h('a', { href: '#/about' }, '关于与致谢'), ' · 数据：ECDICT、CEFR-J、Octanove');
+const footer = h('footer', { class: 'site-footer muted small' }, h('a', { href: '#/about' }, '关于与致谢'), ' · 数据：ECDICT、CEFR-J、Octanove · 名著原文：Project Gutenberg');
 app.append(nav, main, footer);
 registerSW();
 
@@ -49,7 +52,8 @@ async function render() {
   main.replaceChildren(view);
   const route = parseHash();
   for (const a of nav.querySelectorAll<HTMLElement>('[data-nav]')) {
-    const on = a.dataset.nav === (route.name === 'read' ? 'list' : route.name);
+    const navOf = route.name === 'read' ? 'list' : route.name === 'classic' ? 'classics' : route.name;
+    const on = a.dataset.nav === navOf;
     a.classList.toggle('active', on);
     on ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current');
   }
@@ -57,7 +61,11 @@ async function render() {
   let c: () => void;
   try {
     if (route.name === 'read') c = await mountReader(view, route.id!, route.query);
-    else if (route.name === 'words') c = mountWords(view);
+    else if (route.name === 'classic') c = await mountClassicReader(view, route.id!, route.query);
+    else if (route.name === 'classics') {
+      window.scrollTo({ top: 0 });
+      c = await mountClassics(view);
+    } else if (route.name === 'words') c = mountWords(view);
     else if (route.name === 'settings') c = mountSettings(view);
     else if (route.name === 'about') c = mountAbout(view);
     else {

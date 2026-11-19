@@ -1,6 +1,6 @@
-import type { Article, ArticleIndex, DictEntry, EntriesMap, FormsMap, Level } from './shared/types.ts';
+import type { Archaisms, Article, ArticleIndex, Classic, ClassicIndex, ClassicsDict, DictEntry, EntriesMap, FormsMap, GlossItem, Level } from './shared/types.ts';
 import { LEVELS } from './shared/types.ts';
-import { resolveToken, viewOf } from './shared/text.ts';
+import { glossKey, resolveToken, resolveWithGloss, viewOf } from './shared/text.ts';
 import type { Resolved } from './shared/text.ts';
 
 const BASE = import.meta.env.BASE_URL; // './' by default => relative to the page, works on any sub-path
@@ -62,7 +62,10 @@ export interface LookupResult {
 }
 
 export function lookup(token: string): LookupResult {
-  const res = resolveToken(token, view);
+  return lookupIn(token, resolveToken(token, view), entries);
+}
+
+function lookupIn(token: string, res: Resolved | null, entries: EntriesMap): LookupResult {
   if (!res) return { token, res: null, lemma: token.toLowerCase().replace(/['’]s$/, '') };
   const entry = entries[res.lemma];
   const formEntry = res.key !== res.lemma && Object.prototype.hasOwnProperty.call(entries, res.key) ? entries[res.key] : undefined;
@@ -71,4 +74,52 @@ export function lookup(token: string): LookupResult {
   return { token, res, lemma: res.lemma, entry, formEntry, altKey, altEntry: altKey ? entries[altKey] : undefined, parts };
 }
 
-export const getEntry = (k: string): DictEntry | undefined => entries[k];
+export const getEntry = (k: string): DictEntry | undefined => entries[k] ?? (clEntries && Object.prototype.hasOwnProperty.call(clEntries, k) ? clEntries[k] : undefined);
+
+// ---------- classics (名著赏析): a separate pool with its own supplementary dictionary ----------
+let classicsIndexP: Promise<ClassicIndex> | null = null;
+export const loadClassicsIndex = () => (classicsIndexP ??= getJson<ClassicIndex>('data/classics/index.json'));
+const classicCache = new Map<string, Promise<Classic>>();
+export const loadClassic = (id: string) => {
+  if (!/^cl-\d{3}$/.test(id)) return Promise.reject(new Error('bad id'));
+  if (!classicCache.has(id)) classicCache.set(id, getJson<Classic>(`data/classics/${id}.json`));
+  return classicCache.get(id)!;
+};
+let archaisms: Archaisms = {};
+let clEntries: EntriesMap | null = null;
+let clView = view;
+let classicsDictP: Promise<void> | null = null;
+/** Main dictionary (all levels) + classics-only forms/entries + archaism notes. Articles never see the extra data. */
+export function ensureClassicsDict(): Promise<void> {
+  classicsDictP ??= Promise.all([
+    ensureDict('C1'),
+    getJson<ClassicsDict>('data/classics/dict.json'),
+    getJson<Archaisms>('data/classics/archaisms.json'),
+  ]).then(([, d, a]) => {
+    archaisms = a;
+    clEntries = d.entries;
+    const mergedEntries = { ...entries, ...d.entries };
+    clView = viewOf({ ...forms, ...d.forms }, mergedEntries);
+    classicMerged = mergedEntries;
+  });
+  return classicsDictP;
+}
+let classicMerged: EntriesMap = {};
+
+/** The note for a word in a classic: the excerpt's own glossary first, then the shared archaism list. */
+export function glossFor(glossary: Map<string, GlossItem>, token: string): GlossItem | null {
+  const k = glossKey(token);
+  const k2 = k.replace(/'s$/, '');
+  const g = glossary.get(k) ?? glossary.get(k2);
+  if (g) return g;
+  const a = archaisms[k] ?? archaisms[k2];
+  return a ? { form: archaisms[k] ? k : k2, ...a } : null;
+}
+
+export interface ClassicLookup extends LookupResult {
+  gloss: GlossItem | null;
+}
+export function lookupClassic(token: string, gloss: GlossItem | null): ClassicLookup {
+  const res = resolveWithGloss(token, gloss, (w) => resolveToken(w, clView));
+  return { ...lookupIn(token, res, classicMerged), gloss };
+}

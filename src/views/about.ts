@@ -9,6 +9,11 @@ export function mountAbout(root: HTMLElement): () => void {
       h('p', null, 'English Reader 是一个只给自己用的纯静态英语分级阅读工具：B1 / B2 / C1 三个级别，点词即查中文词典，生词本和阅读进度只保存在本机浏览器里（localStorage），没有账号、没有服务器、没有任何统计上报。'),
       h('h2', null, '文章'),
       h('p', null, '当前所有文章均为 AI 生成的原创示例文本，不以任何受版权保护的文章为底稿。'),
+      h('h2', null, '名著赏析'),
+      h('p', null, '「名著」栏目的原文选段全部来自 ', link('https://www.gutenberg.org/', 'Project Gutenberg'),
+        ' 收录的公有领域（public domain）作品，均为 1930 年以前出版、在美国已进入公有领域的版本；每篇页面都注明了所用 Project Gutenberg 电子书编号与链接。'
+        + '本站只摘录作者正文，已去除 Project Gutenberg 的页眉、页脚与许可声明；各篇的英文导读（Background）、注释与赏析（Appreciation）为本站撰写。'
+        + '“Project Gutenberg” 是 Project Gutenberg Literary Archive Foundation 的注册商标，本站与其无任何关联，也未获其背书。如你所在地区的版权法不同，请自行确认作品在当地的版权状态。'),
       h('h2', null, '数据来源与许可'),
       h('ul', null,
         h('li', null, h('strong', null, 'ECDICT'), '（开源英汉词典数据库，MIT 许可证）：音标、中文释义、词形变化（exchange）、考试标签、柯林斯星级。© skywind3000，',

@@ -1,5 +1,6 @@
 import { clear, h, topicLabel } from '../dom.ts';
-import { loadIndex } from '../data.ts';
+import { loadClassicsIndex, loadIndex } from '../data.ts';
+import type { ClassicMeta } from '../shared/types.ts';
 import { LEVELS } from '../shared/types.ts';
 import type { ArticleMeta, Level } from '../shared/types.ts';
 import { getProgress, getSettings, getStatus, minutesOf, onChange, setSettings } from '../store.ts';
@@ -11,6 +12,8 @@ const filters = { topic: '', status: '' as '' | Status, q: '' };
 export async function mountList(root: HTMLElement): Promise<() => void> {
   root.append(h('p', { class: 'muted' }, '加载中…'));
   const index = await loadIndex();
+  // 继续阅读 may point at a classic too (G8); the list itself stays articles-only
+  const classics: ClassicMeta[] = await loadClassicsIndex().then((i) => i.excerpts).catch(() => []);
   clear(root);
   let level: Level = getSettings().lastLevel;
   const all = index.articles;
@@ -63,6 +66,14 @@ export async function mountList(root: HTMLElement): Promise<() => void> {
     clear(cont);
     const prog = getProgress();
     const cur = Object.entries(prog).filter(([, p]) => p.status === 'reading').sort((a, b) => b[1].updatedAt - a[1].updatedAt)[0];
+    if (cur && cur[0].startsWith('cl-')) {
+      const cm = classics.find((c) => c.id === cur[0]);
+      if (!cm) return;
+      cont.append(h('a', { class: 'continue-card', href: `#/classics/${cm.id}` },
+        h('span', { class: 'continue-label' }, '继续阅读 · 名著'), h('strong', null, `${cm.work} · ${cm.title}`),
+        h('span', { class: 'muted' }, `参考 ${cm.refLevel} · 已读 ${Math.round(cur[1].scroll * 100)}%`)));
+      return;
+    }
     const meta = cur && all.find((a) => a.id === cur[0]);
     if (!meta) return;
     cont.append(h('a', { class: 'continue-card', href: `#/read/${meta.id}` },

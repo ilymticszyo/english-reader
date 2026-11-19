@@ -1,7 +1,7 @@
 import { clear, h } from './dom.ts';
 import { getEntry, lookup } from './data.ts';
-import type { LookupResult } from './data.ts';
-import { FORM_LABELS } from './shared/text.ts';
+import type { ClassicLookup, LookupResult } from './data.ts';
+import { FORM_LABELS, glossKey } from './shared/text.ts';
 import type { DictEntry } from './shared/types.ts';
 import { addWord, getSettings, hasWord, onChange, recordLookup, removeWord, restoreWord } from './store.ts';
 import type { VocabCtx, VocabItem } from './store.ts';
@@ -119,7 +119,10 @@ export function showCard(anchor: HTMLElement, token: string, ctx: VocabCtx | nul
   // collect on lookup
   if (record) recordLookup(lemma, snapshotOf(entry), ctx, settings.autoCollect);
 
-  const showForm = !!res && res.key !== res.lemma;
+  const gloss = (r as Partial<ClassicLookup>).gloss ?? null;
+  // the note redirected the lookup (warn't -> be, thou -> you): show "form ← headword"
+  const viaGloss = !!gloss && !!res && glossKey(token) !== res.key && (gloss.dict === res.key || gloss.lemma === res.key);
+  const showForm = !!res && (res.key !== res.lemma || viaGloss);
   const card = h('div', { class: 'card', role: 'dialog', 'aria-label': `词典：${lemma}`, tabindex: '-1' });
   const handle = h('div', { class: 'card-handle', 'aria-hidden': 'true' });
 
@@ -129,7 +132,7 @@ export function showCard(anchor: HTMLElement, token: string, ctx: VocabCtx | nul
       h('span', { class: 'card-form' }, token),
       h('span', { class: 'card-arrow' }, ' ← '),
       h('span', { class: 'card-lemma' }, lemma),
-      h('span', { class: 'card-formtype' }, `（${res!.via === 'fallback' ? '词形推测' : formLabel(entry, res!.key)}）`),
+      h('span', { class: 'card-formtype' }, `（${viaGloss ? '注释所指词条' : res!.via === 'fallback' ? '词形推测' : formLabel(entry, res!.key)}）`),
     );
   } else {
     title.append(h('span', { class: 'card-lemma' }, entry?.proper || entry?.parts ? token : lemma));
@@ -161,6 +164,13 @@ export function showCard(anchor: HTMLElement, token: string, ctx: VocabCtx | nul
   const head = h('div', { class: 'card-head' }, title, h('div', { class: 'card-actions' }, speaker, star, h('button', { class: 'iconbtn close', type: 'button', 'aria-label': '关闭', onclick: () => closeCard(true) }, '✕')));
   card.append(handle, head);
 
+  // classics: the excerpt's own note (archaic / dialect / misleading sense) always comes first
+  if (gloss) {
+    card.append(h('section', { class: 'card-gloss', 'aria-label': '本篇注释' },
+      h('div', { class: 'gl-label' }, '本篇注释 · Note'),
+      h('p', { class: 'gl-note', lang: 'en' }, gloss.note),
+      h('p', { class: 'gl-zh' }, gloss.zh)));
+  }
   if (entry?.p) card.append(h('div', { class: 'card-phon', title: 'ECDICT 参考音标' }, `/${entry.p}/`));
 
   if (entry?.parts && r.parts) {
@@ -179,7 +189,7 @@ export function showCard(anchor: HTMLElement, token: string, ctx: VocabCtx | nul
     if (entry.proper) card.append(h('div', { class: 'card-note' }, '专有名词 / 术语（补充释义）'));
     card.append(...entryBody(entry));
   } else {
-    card.append(h('div', { class: 'card-missing' }, '词典未收录'));
+    card.append(h('div', { class: 'card-missing' }, gloss ? '词典未收录（见上方注释）' : '词典未收录'));
   }
 
   if (formEntry && showForm) {
