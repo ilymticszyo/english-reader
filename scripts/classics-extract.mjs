@@ -44,8 +44,9 @@ if (process.argv[2] === 'fill') {
     const raw = readFileSync(new URL(f, dir), 'utf8');
     const fm = Object.fromEntries(raw.split('\n---\n')[0].split('\n').map((l) => [l.slice(0, l.indexOf(':')).trim(), l.slice(l.indexOf(':') + 1).trim()]));
     const n = (fm.edition.match(/#(\d+)/) || [])[1];
-    const ps = extract(n, fm.sourceStart, fm.sourceEnd);
-    if (fm.excerptPrefix) ps[0] = fm.excerptPrefix + ps[0];
+    const ps = extract(n, fm.sourceStart, fm.sourceEnd).map((p) => (/^(\*\s*){3,}$/.test(p) ? '⁂' : p)); // a row of asterisks is a scene break
+    const prefix = /^".*"$/.test(fm.excerptPrefix ?? '') ? JSON.parse(fm.excerptPrefix) : fm.excerptPrefix; // quote it to keep a trailing space
+    if (prefix) ps[0] = prefix + ps[0];
     const next = raw.replace(/(## Excerpt\n\n)[\s\S]*?(\n\n## )/, (_, a, b) => a + ps.join('\n\n') + b);
     writeFileSync(new URL(f, dir), next);
     console.log(f, wc(ps), 'words');

@@ -39,6 +39,7 @@ async function newPage(opts = {}) {
   return page;
 }
 const PER = 100; // articles per level in the current content batch
+const NCL = 100; // classics excerpts (cl-001…cl-100)
 const word = (page, text, nth = 0) => page.locator('.article-body .w', { hasText: new RegExp(`^${text}$`) }).nth(nth);
 const cardTitle = async (page) => (await page.locator('.card .card-title').innerText()).replace(/\s+/g, ' ').trim();
 const lum = (rgb) => {
@@ -654,10 +655,10 @@ try {
     const clw = (page, text, scope = '.cl-excerpt-body', nth = 0) => page.locator(`${scope} .w`, { hasText: new RegExp(`^${text}$`) }).nth(nth);
 
     // G1: separate pool, report-only, the three levels untouched
-    check('G1: 30 classics, ids cl-001…cl-030', CL.length === 30 && CL.every((c, i) => c.id === `cl-${String(i + 1).padStart(3, '0')}`));
+    check(`G1: ${NCL} classics, ids cl-001…cl-${NCL}`, CL.length === NCL && CL.every((c, i) => c.id === `cl-${String(i + 1).padStart(3, '0')}`));
     check(`G1: article pools unchanged (B1/B2/C1 = ${PER} each, no cl- ids)`, ['B1', 'B2', 'C1'].every((l) => artIdx.filter((a) => a.level === l).length === PER) && !artIdx.some((a) => a.id.startsWith('cl-')));
     check('G1: build report lists classics coverage as reference only (not gated)', !!rep.classics && /reference only/i.test(readFileSync(resolve(ROOT, 'reports/build-report.md'), 'utf8')), Object.keys(rep).join());
-    check('G1/SW: version.json lists the classics data (30 excerpts + index/dict/archaisms)', ver.classics === 30 && ['data/classics/index.json', 'data/classics/dict.json', 'data/classics/archaisms.json'].every((f) => ver.classicsData.includes(f)), JSON.stringify({ c: ver.classics }));
+    check(`G1/SW: version.json lists the classics data (${NCL} excerpts + index/dict/archaisms)`, ver.classics === NCL && ['data/classics/index.json', 'data/classics/dict.json', 'data/classics/archaisms.json'].every((f) => ver.classicsData.includes(f)), JSON.stringify({ c: ver.classics }));
     check('G1/SW: sw.js precaches every classics file', (() => { const sw = readFileSync(resolve(ROOT, 'dist/sw.js'), 'utf8'); return ver.classicsData.every((f) => sw.includes(`./${f}`)); })());
 
     let page = await newPage();
@@ -673,7 +674,7 @@ try {
     check('G1: 名著 opens #/classics and is marked active', page.url().endsWith('#/classics') && (await page.locator('.navlinks a.active').innerText()).trim() === '名著');
 
     // G2: list, cards, filters, search, empty state
-    check('G2: list shows all 30 excerpts', (await page.locator('.classic-card').count()) === 30);
+    check(`G2: list shows all ${NCL} excerpts`, (await page.locator('.classic-card').count()) === NCL);
     const c1 = await page.locator('.classic-card[data-id="cl-001"]').innerText();
     check('G2: card shows work, author, scene, ref level, words, minutes, status', /Pride and Prejudice/.test(c1) && /Jane Austen/.test(c1) && /Chapter 1/.test(c1) && /参考 B2/.test(c1) && /原文 \d+ 词/.test(c1) && /约 \d+ 分钟/.test(c1) && /未读/.test(c1), c1.replace(/\n/g, '|'));
     const nSpoil = CL.filter((c) => c.spoiler).length;
@@ -696,7 +697,7 @@ try {
     await page.fill('#cl-q', 'zzzz');
     check('G2: empty state with clear-filter button', (await page.locator('.classic-card').count()) === 0 && (await page.locator('#cl-clear').count()) === 1);
     await page.click('#cl-clear');
-    check('G2: clear filters restores all 30', (await page.locator('.classic-card').count()) === 30 && (await page.inputValue('#cl-q')) === '');
+    check(`G2: clear filters restores all ${NCL}`, (await page.locator('.classic-card').count()) === NCL && (await page.inputValue('#cl-q')) === '');
     check('G2: no continue card before reading anything', (await page.locator('.continue-card').count()) === 0);
 
     // G3: reader blocks in PRD order, tap-to-lookup in every block
@@ -812,7 +813,7 @@ try {
     await page.goto(url + '#/classics/cl-001');
     await page.waitForSelector('.cl-excerpt-body .w');
     check('G8: first classic: prev disabled, next = cl-002', (await page.locator('.article-nav .btn.disabled', { hasText: '上一篇' }).count()) === 1 && (await page.locator('.article-nav a[rel="next"]').getAttribute('href')) === '#/classics/cl-002');
-    await page.goto(url + '#/classics/cl-030');
+    await page.goto(url + `#/classics/cl-${NCL}`);
     await page.waitForSelector('.cl-excerpt-body .w');
     check('G8: last classic: next disabled', (await page.locator('.article-nav .btn.disabled', { hasText: '下一篇' }).count()) === 1);
     await page.goto(url + '#/classics');
@@ -890,7 +891,7 @@ try {
     check(`${label}: offline vocab page works`, /生词本/.test(await page.locator('h1').innerText()));
     await page.goto(base + '#/classics');
     await page.waitForSelector('.classic-card');
-    check(`${label}: offline classics list (名著) works`, (await page.locator('.classic-card').count()) === 30);
+    check(`${label}: offline classics list (名著) works`, (await page.locator('.classic-card').count()) === NCL);
     await page.click('.classic-card[data-id="cl-030"]');
     await page.waitForSelector('.cl-excerpt-body .w.gl');
     await page.locator('.cl-excerpt-body .w.gl[data-g="yonder"]').first().click();

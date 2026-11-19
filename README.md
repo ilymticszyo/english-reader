@@ -59,7 +59,7 @@ npm run screenshots
 
 ## 名著赏析（#/classics）
 
-顶部导航「名著」，独立于 B1/B2/C1 三个分级池（不计入覆盖率门禁，构建报告里只做参考统计）。共 30 篇公版名著选段（Project Gutenberg），每篇：英文导读 Background → 原文 The Excerpt → 本篇注释 → 英文赏析 Appreciation → Sentences to imitate（3–5 句原文仿写句）。
+顶部导航「名著」，独立于 B1/B2/C1 三个分级池（不计入覆盖率门禁，构建报告里只做参考统计）。共 100 篇公版名著选段（Project Gutenberg；参考级别 B1 32 · B2 35 · C1 33，共 76 位作者），每篇：英文导读 Background → 原文 The Excerpt → 本篇注释 → 英文赏析 Appreciation → Sentences to imitate（3–5 句原文仿写句）。
 
 - 源文件：`content/classics/cl-NNN.md`（frontmatter 含 `edition: Project Gutenberg #N`、`url`、`year`、`pdNote`、`pdVerified: true`，缺一即构建失败）；注释行 `- form | English note | 中文` 或 `- form => 词典词 | note | 中文`（方言/误导词指向正确词条）。
 - 共用古旧词表：`content/classics/archaisms.json`（thee, hath, 'tis, o'er …）；名著专用人名地名：`content/classics/terms.json`（只进名著词典，不影响文章）。

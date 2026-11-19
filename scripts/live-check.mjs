@@ -77,7 +77,7 @@ const active = await swVersion();
 check('Service Worker cache is the deployed version', active.length === 1 && active[0] === ver.version, `${active} vs ${ver.version}`);
 check('version.json readable', !!ver.version, JSON.stringify({ version: ver.version, files: ver.files, classics: ver.classics }));
 if (process.env.EXPECT_VERSION) check('deployed version is the expected build', ver.version === process.env.EXPECT_VERSION, `${ver.version} vs ${process.env.EXPECT_VERSION}`);
-check('version.json lists 30 classics', ver.classics === 30 && (ver.classicsData || []).includes('data/classics/dict.json'));
+check('version.json lists 100 classics', ver.classics === 100 && (ver.classicsData || []).includes('data/classics/dict.json'));
 // wait for precache complete then test offline
 await page.waitForTimeout(8000);
 await ctx.setOffline(true);
@@ -91,7 +91,7 @@ const cached = await page.evaluate(async () => { const k = (await caches.keys())
 check('offline: Service Worker precached the classics data', cached >= 33, `${cached} files`);
 await page.goto(url + '#/classics');
 await page.waitForSelector('.classic-card', { timeout: 15000 });
-check('offline: classics list loads', (await page.locator('.classic-card').count()) === 30);
+check('offline: classics list loads', (await page.locator('.classic-card').count()) === 100);
 await page.goto(url + '#/classics/cl-015');
 await page.waitForSelector('.cl-excerpt-body .w.gl', { timeout: 15000 });
 await page.locator('.cl-excerpt-body .w.gl').first().click();
@@ -106,7 +106,7 @@ await page.waitForSelector('.card-item');
 check('nav: 文章 / 名著 / 生词本 / 设置', (await page.locator('.navlinks a').allTextContents()).map((x) => x.trim()).join('|') === '文章|名著|生词本|设置');
 await page.click('.navlinks a[data-nav="classics"]');
 await page.waitForSelector('.classic-card');
-check('classics: 名著 nav opens #/classics with 30 excerpts', page.url().endsWith('#/classics') && (await page.locator('.classic-card').count()) === 30, String(await page.locator('.classic-card').count()));
+check('classics: 名著 nav opens #/classics with 100 excerpts', page.url().endsWith('#/classics') && (await page.locator('.classic-card').count()) === 100, String(await page.locator('.classic-card').count()));
 await page.screenshot({ path: `${clOut}-01-list.png` });
 await page.click('.classic-card[data-id="cl-001"]');
 await page.waitForSelector('.cl-excerpt-body .w');
