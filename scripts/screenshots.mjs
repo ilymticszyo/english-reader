@@ -1,5 +1,5 @@
 import { chromium } from 'playwright';
-import { mkdirSync, rmSync } from 'node:fs';
+import { mkdirSync, readdirSync, rmSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { serve } from './static-server.mjs';
 
@@ -11,8 +11,8 @@ const browser = await chromium.launch();
 const word = (page, t, n = 0) => page.locator('.article-body .w', { hasText: new RegExp(`^${t}$`) }).nth(n);
 
 // 1. list (desktop, light)
-rmSync(OUT, { recursive: true, force: true });
-mkdirSync(OUT, { recursive: true });
+// only this script's own NN-*.png files: classics-*, history-* and live-* screenshots in the same folder are kept
+for (const f of readdirSync(OUT)) if (/^\d\d-.*\.png$/.test(f)) rmSync(resolve(OUT, f), { force: true });
 let ctx = await browser.newContext({ viewport: { width: 1100, height: 760 }, deviceScaleFactor: 1 });
 let page = await ctx.newPage();
 await page.goto(url);

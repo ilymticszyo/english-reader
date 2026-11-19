@@ -1,6 +1,6 @@
 // Smoke test against a deployed URL.
 // Usage: node scripts/live-check.mjs https://user.github.io/english-reader/ [outPrefix] [classicsOutPrefix]
-//   EXPECT_VERSION=0.4.0+abcd1234  require that exact deployed version (e.g. from dist/version.json)
+//   EXPECT_VERSION=0.6.0+abcd1234  require that exact deployed version (e.g. from dist/version.json)
 //   PROFILE=/tmp/er-live-profile    reuse a browser profile: run once before the deploy (WARM=1 only caches the old
 //                                   version and exits), then again after it to check the update banner + takeover.
 import { chromium } from 'playwright';
@@ -128,6 +128,54 @@ await page.waitForSelector('.card .card-gloss');
 check('classics: archaic-word gloss (yonder) shown first in the popup', /over there/.test(await page.locator('.card .card-gloss').innerText()));
 await page.screenshot({ path: `${clOut}-03-gloss.png` });
 await page.keyboard.press('Escape');
+// ---- reading history (阅读记录), in a separate clean browser so the checks do not depend on earlier state
+{
+  const hb = await chromium.launch();
+  const hctx = await hb.newContext({ viewport: { width: 1280, height: 800 }, acceptDownloads: true });
+  const hp = await hctx.newPage();
+  hp.on('pageerror', (e) => errors.push(String(e)));
+  await hp.goto(url);
+  await hp.waitForSelector('.card-item');
+  // a 0.5.0-era store: meta schema 1, entries without readAt → migrated on load without loss
+  const old = { 'b1-001': { status: 'read', scroll: 1, updatedAt: 1000 }, 'b1-002': { status: 'reading', scroll: 0.9, updatedAt: 2000 }, 'cl-002': { status: 'read', scroll: 1, updatedAt: 3000 } };
+  await hp.evaluate((p) => { localStorage.clear(); localStorage.setItem('ra:v1:meta', JSON.stringify({ schema: 1, createdAt: 1 })); localStorage.setItem('ra:v1:progress', JSON.stringify(p)); }, old);
+  await hp.reload();
+  await hp.waitForSelector('.card-item');
+  const mig = await hp.evaluate(() => ({ p: JSON.parse(localStorage.getItem('ra:v1:progress')), m: JSON.parse(localStorage.getItem('ra:v1:meta')) }));
+  check('history: old progress migrated without loss (schema 2, readAt added)', mig.m.schema === 2 && Object.keys(old).every((id) => mig.p[id]?.status === old[id].status && mig.p[id].updatedAt === old[id].updatedAt) && mig.p['b1-001'].readAt === 1000, JSON.stringify(mig.m));
+  const rows = await hp.locator('.history-summary .hs-row').allInnerTexts();
+  check('history: four progress lines B1 / B2 / C1 / 名著', rows.length === 4 && /已读 1 \/ 100/.test(rows[0]) && /名著\s*已读 1 \/ 100/.test(rows[3]), rows.join(' | '));
+  await hp.goto(url + '#/read/b1-004');
+  await hp.waitForSelector('.article-body .w');
+  await hp.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  await hp.waitForTimeout(2300);
+  check('history: reaching the bottom auto-marks the article read', await hp.evaluate(() => { const p = JSON.parse(localStorage.getItem('ra:v1:progress'))['b1-004']; return p?.status === 'read' && p.readAt > 0; }));
+  await hp.goto(url + '#/');
+  await hp.waitForSelector('.card-item');
+  await hp.click('.tab[data-level="B1"]');
+  check('history: read badges + B1 line 2 / 100', (await hp.locator('.card-item .badge-read').count()) === 2 && /已读 2 \/ 100/.test(await hp.locator('.hs-row[data-k="B1"]').innerText()));
+  await hp.check('#only-unread');
+  check('history: 只看未读 filter', (await hp.locator('.card-item').count()) === 98 && (await hp.locator('.card-item[data-id="b1-004"]').count()) === 0);
+  await hp.screenshot({ path: `${out}-history-01-list.png` });
+  await hp.goto(url + '#/classics');
+  await hp.waitForSelector('.classic-card');
+  await hp.check('#cl-only-unread');
+  check('history: classics badge + 只看未读', (await hp.locator('.classic-card').count()) === 99);
+  await hp.goto(url + '#/settings');
+  await hp.waitForSelector('#settings-history .hs-row');
+  const [dl] = await Promise.all([hp.waitForEvent('download'), hp.click('#export-btn')]);
+  const ex = JSON.parse(await (await import('node:fs/promises')).readFile(await dl.path(), 'utf8'));
+  check('history: export = one JSON, schema 2, reading history + vocab', ex.schema === 2 && ex.app === 'english-reader' && ex.history['b1-004']?.status === 'read' && ex.vocab && typeof ex.vocab === 'object');
+  const { writeFileSync } = await import('node:fs');
+  writeFileSync('/tmp/er-live-old-vocab.json', JSON.stringify({ schema: 1, app: 'english-reader', exportedAt: '2026-01-01T00:00:00.000Z', vocab: { zebra: { addedAt: 1, lastAt: 1, count: 1, mastered: false, snap: { zh: 'n. 斑马' }, ctx: [] } } }));
+  await hp.setInputFiles('#import-file', '/tmp/er-live-old-vocab.json');
+  await hp.waitForSelector('#import-dialog');
+  await hp.click('#import-merge');
+  await hp.waitForTimeout(200);
+  check('history: old vocab-only file imports by merge, history kept', await hp.evaluate(() => 'zebra' in JSON.parse(localStorage.getItem('ra:v1:vocab')) && JSON.parse(localStorage.getItem('ra:v1:progress'))['b1-004'].status === 'read'));
+  await hctx.close();
+  await hb.close();
+}
 // About
 await page.goto(url + '#/about');
 await page.waitForTimeout(800);

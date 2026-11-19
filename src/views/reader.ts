@@ -25,7 +25,7 @@ export async function mountReader(root: HTMLElement, id: string, query: URLSearc
   const next = siblings[pos + 1];
 
   // ---------- header ----------
-  const statusBtn = h('button', { class: 'btn small', type: 'button' });
+  const statusBtn = h('button', { class: 'btn small', type: 'button', id: 'art-status' });
   const syncStatus = () => {
     const st = getStatus(id);
     statusBtn.textContent = st === 'read' ? '✓ 已读（点击改回未读）' : '标记为已读';

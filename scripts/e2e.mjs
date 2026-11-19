@@ -2,6 +2,7 @@
 import { chromium } from 'playwright';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 import { serve } from './static-server.mjs';
 
 const ROOT = resolve(import.meta.dirname, '..');
@@ -40,6 +41,7 @@ async function newPage(opts = {}) {
 }
 const PER = 100; // articles per level in the current content batch
 const NCL = 100; // classics excerpts (cl-001…cl-100)
+const CLX = JSON.parse(readFileSync(resolve(ROOT, 'dist/data/classics/index.json'), 'utf8')).excerpts;
 const word = (page, text, nth = 0) => page.locator('.article-body .w', { hasText: new RegExp(`^${text}$`) }).nth(nth);
 const cardTitle = async (page) => (await page.locator('.card .card-title').innerText()).replace(/\s+/g, ' ').trim();
 const lum = (rgb) => {
@@ -246,19 +248,20 @@ try {
   await dl.saveAs(file);
   const backup = JSON.parse(readFileSync(file, 'utf8'));
   const vocabNow = await page.evaluate(() => JSON.parse(localStorage.getItem('ra:v1:vocab')));
-  check('export file: schema version + app + vocab/progress/settings', backup.schema === 1 && backup.app === 'english-reader' && backup.vocab && backup.progress && backup.settings);
+  check('export file: schema 2 + app + vocab + reading history (+ settings) in one JSON', backup.schema === 2 && backup.app === 'english-reader' && backup.vocab && backup.history && backup.settings && !('progress' in backup));
   check('export contains all vocab entries', JSON.stringify(Object.keys(backup.vocab).sort()) === JSON.stringify(Object.keys(vocabNow).sort()));
   check('download filename', /^english-reader-backup-\d{4}-\d{2}-\d{2}\.json$/.test(dl.suggestedFilename()), dl.suggestedFilename());
-  // wipe then import (overwrite)
+  // wipe then import: merging into an empty book restores identical data
   await page.evaluate(() => { localStorage.setItem('ra:v1:vocab', '{}'); });
   await page.reload();
   await page.waitForSelector('.empty');
   await page.setInputFiles('#import-file', file);
   await page.waitForSelector('.modal');
-  await page.click('#import-overwrite');
+  check('import dialog offers merge only (no overwrite)', (await page.locator('#import-merge').count()) === 1 && (await page.locator('#import-overwrite').count()) === 0);
+  await page.click('#import-merge');
   await page.waitForSelector('.vocab-row');
-  const afterOverwrite = await page.evaluate(() => JSON.parse(localStorage.getItem('ra:v1:vocab')));
-  check('import (overwrite) restores identical data', JSON.stringify(afterOverwrite) === JSON.stringify(vocabNow));
+  const afterRestore = await page.evaluate(() => JSON.parse(localStorage.getItem('ra:v1:vocab')));
+  check('import into an empty vocab book restores identical data', isDeepStrictEqual(afterRestore, vocabNow));
   // merge: add an extra word first, then merge the backup
   await page.evaluate(() => { const v = JSON.parse(localStorage.getItem('ra:v1:vocab')); v.zebra = { addedAt: 1, lastAt: 1, count: 1, mastered: false, snap: { zh: 'n. 斑马' }, ctx: [] }; delete v.go; localStorage.setItem('ra:v1:vocab', JSON.stringify(v)); });
   await page.reload();
@@ -390,10 +393,141 @@ try {
   check('scrolling to the end marks article read', await page.evaluate(() => JSON.parse(localStorage.getItem('ra:v1:progress'))['b2-005'].status === 'read'));
   await page.goto(url + '#/');
   await page.click('.tab[data-level="B2"]');
-  check('list shows 已读 status and level progress 1/100', (await page.locator('.card-item[data-id="b2-005"] .st-read').count()) === 1 && /1 \/ 100/.test(await page.locator('.progress-line').innerText()), await page.locator('.progress-line').innerText());
+  check('list shows 已读 status and level progress 1/100', (await page.locator('.card-item[data-id="b2-005"] .st-read').count()) === 1 && /已读 1 \/ 100/.test(await page.locator('.hs-row[data-k="B2"]').innerText()), await page.locator('.history-summary').innerText());
   await page.selectOption('select[aria-label="按阅读状态筛选"]', 'read');
   check('status filter (已读)', (await page.locator('.card-item').count()) === 1);
   await page.context().close();
+
+  // ------------------------------------------------------------ reading history (阅读记录)
+  section('Reading history (阅读记录): migration, badges, unread filter, progress lines, export / import');
+  {
+  page = await newPage();
+  await page.goto(url);
+  await page.waitForSelector('.card-item');
+  // a 0.5.0 user: meta schema 1, progress entries without readAt
+  const oldProgress = { 'b1-001': { status: 'read', scroll: 1, updatedAt: 1000 }, 'b1-002': { status: 'reading', scroll: 0.9, updatedAt: 2000 }, 'b2-010': { status: 'unread', scroll: 0, updatedAt: 3000 }, 'cl-002': { status: 'read', scroll: 1, updatedAt: 4000 } };
+  await page.evaluate((p) => { localStorage.clear(); localStorage.setItem('ra:v1:meta', JSON.stringify({ schema: 1, createdAt: 1 })); localStorage.setItem('ra:v1:progress', JSON.stringify(p)); localStorage.setItem('ra:v1:vocab', JSON.stringify({ go: { addedAt: 1, lastAt: 1, count: 1, mastered: false, snap: { zh: 'vi. 去' }, ctx: [] } })); }, oldProgress);
+  await page.reload();
+  await page.waitForSelector('.card-item');
+  const mig = await page.evaluate(() => ({ p: JSON.parse(localStorage.getItem('ra:v1:progress')), m: JSON.parse(localStorage.getItem('ra:v1:meta')), bak: localStorage.getItem('ra:v1:progress.bak-v1') }));
+  check('H: migration keeps every old entry (status, scroll, updatedAt) keyed by article id', Object.entries(oldProgress).every(([id, o]) => mig.p[id] && mig.p[id].status === o.status && mig.p[id].scroll === o.scroll && mig.p[id].updatedAt === o.updatedAt) && Object.keys(mig.p).length === 4, JSON.stringify(mig.p));
+  check('H: migration adds readAt to read entries only', mig.p['b1-001'].readAt === 1000 && mig.p['cl-002'].readAt === 4000 && !('readAt' in mig.p['b1-002']));
+  check('H: storage schema bumped to 2, untouched old copy kept in ra:v1:progress.bak-v1', mig.m.schema === 2 && mig.m.createdAt === 1 && JSON.stringify(JSON.parse(mig.bak)) === JSON.stringify(oldProgress), JSON.stringify(mig.m));
+  await page.reload();
+  await page.waitForSelector('.card-item');
+  check('H: migration runs once (reload leaves data identical)', isDeepStrictEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('ra:v1:progress'))), mig.p));
+  // list badges + progress lines + unread filter
+  await page.click('.tab[data-level="B1"]');
+  check('H: read badge on read articles only', (await page.locator('.card-item[data-id="b1-001"] .badge-read').innerText()).includes('✓ 已读') && (await page.locator('.card-item .badge-read').count()) === 1 && /在读/.test(await page.locator('.card-item[data-id="b1-002"] .status').innerText()));
+  const rows = await page.locator('.history-summary .hs-row').allInnerTexts();
+  check('H: four progress lines B1 / B2 / C1 / 名著 (read X / 100)', rows.length === 4 && /B1\s*已读 1 \/ 100/.test(rows[0]) && /B2\s*已读 0 \/ 100/.test(rows[1]) && /C1\s*已读 0 \/ 100/.test(rows[2]) && /名著\s*已读 1 \/ 100/.test(rows[3]), rows.join(' | '));
+  check('H: progress bars carry aria values', (await page.locator('.hs-row[data-k="B1"] .hs-bar').getAttribute('aria-valuenow')) === '1' && (await page.locator('.hs-row[data-k="B1"] .hs-bar').getAttribute('aria-valuemax')) === '100');
+  await page.check('#only-unread');
+  check('H: 只看未读 hides read articles (in-progress ones stay)', (await page.locator('.card-item').count()) === PER - 1 && (await page.locator('.card-item[data-id="b1-001"]').count()) === 0 && (await page.locator('.card-item[data-id="b1-002"]').count()) === 1);
+  await page.click('.tab[data-level="B2"]');
+  check('H: unread filter stays on across level tabs', (await page.locator('#only-unread').isChecked()) && (await page.locator('.card-item').count()) === PER);
+  await page.uncheck('#only-unread');
+  await page.click('.tab[data-level="B1"]');
+  check('H: unchecking shows all again', (await page.locator('.card-item').count()) === PER);
+  // classics list
+  await page.goto(url + '#/classics');
+  await page.waitForSelector('.classic-card');
+  check('H: classics list: read badge + same four progress lines', (await page.locator('.classic-card[data-id="cl-002"] .badge-read').count()) === 1 && (await page.locator('.classic-card .badge-read').count()) === 1 && (await page.locator('.history-summary .hs-row').count()) === 4 && /已读 1 \/ 100/.test(await page.locator('.hs-row[data-k="classics"]').innerText()));
+  await page.check('#cl-only-unread');
+  check('H: classics 只看未读', (await page.locator('.classic-card').count()) === NCL - 1 && (await page.locator('.classic-card[data-id="cl-002"]').count()) === 0);
+  await page.selectOption('#cl-author', 'austen');
+  check('H: classics unread filter combines with author filter', (await page.locator('.classic-card').count()) === CLX.filter((c) => c.authorId === 'austen' && c.id !== 'cl-002').length);
+  await page.selectOption('#cl-author', '');
+  await page.uncheck('#cl-only-unread');
+  // auto-mark at the bottom → readAt; manual unmark / re-mark
+  await page.goto(url + '#/read/b1-003');
+  await page.waitForSelector('.article-body .w');
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  await page.waitForTimeout(2300);
+  const p3 = await page.evaluate(() => JSON.parse(localStorage.getItem('ra:v1:progress'))['b1-003']);
+  check('H: reaching the bottom auto-marks read with a readAt time', p3.status === 'read' && typeof p3.readAt === 'number' && p3.readAt > 1e12 && /已读/.test(await page.locator('#art-status').innerText()), JSON.stringify(p3));
+  await page.click('#art-status');
+  const p3u = await page.evaluate(() => JSON.parse(localStorage.getItem('ra:v1:progress'))['b1-003']);
+  check('H: manual unmark → unread, readAt removed, position reset', p3u.status === 'unread' && !('readAt' in p3u) && p3u.scroll === 0, JSON.stringify(p3u));
+  await page.click('#art-status');
+  const p3r = await page.evaluate(() => JSON.parse(localStorage.getItem('ra:v1:progress'))['b1-003']);
+  check('H: manual mark read → read + readAt', p3r.status === 'read' && p3r.readAt >= p3.readAt);
+  await page.goto(url + '#/');
+  await page.waitForSelector('.card-item');
+  check('H: progress line updates (B1 2 / 100) and badge appears', /已读 2 \/ 100/.test(await page.locator('.hs-row[data-k="B1"]').innerText()) && (await page.locator('.card-item[data-id="b1-003"] .badge-read').count()) === 1);
+  // position memory for an in-progress article survives the migration
+  await page.goto(url + '#/read/b1-002');
+  await page.waitForSelector('.article-body .w');
+  await page.waitForTimeout(400);
+  const pos = await page.evaluate(() => { const b = document.querySelector('.article-body'); const top = b.getBoundingClientRect().top + window.scrollY; return { y: window.scrollY, want: Math.max(0, top + 0.9 * b.offsetHeight - window.innerHeight) }; });
+  check('H: reading position restored on reopen (migrated entry, 90%)', pos.want > 100 && Math.abs(pos.y - pos.want) < 40, JSON.stringify(pos));
+  // settings: lines + export
+  await page.goto(url + '#/settings');
+  await page.waitForSelector('#settings-history .hs-row');
+  check('H: settings shows the four progress lines', (await page.locator('#settings-history .hs-row').count()) === 4 && /已读 2 \/ 100/.test(await page.locator('#settings-history .hs-row[data-k="B1"]').innerText()));
+  const [dlH] = await Promise.all([page.waitForEvent('download'), page.click('#export-btn')]);
+  await dlH.saveAs('/tmp/er-history.json');
+  const exH = JSON.parse(readFileSync('/tmp/er-history.json', 'utf8'));
+  check('H: export = one JSON with schema 2, reading history (with readAt) and vocab book', exH.schema === 2 && exH.app === 'english-reader' && exH.history['b1-001'].readAt === 1000 && exH.history['b1-003'].status === 'read' && exH.history['cl-002'].status === 'read' && 'go' in exH.vocab && Object.keys(exH.history).length === 5, Object.keys(exH.history).join());
+  check('H: export toast mentions words and reading history', /1 个生词和 5 条阅读记录/.test(await page.locator('.toast').last().innerText()));
+  const before = await page.evaluate(() => JSON.parse(localStorage.getItem('ra:v1:progress')));
+  // old vocab-only export (0.1–0.5 era file without progress)
+  writeFileSync('/tmp/er-old-vocab.json', JSON.stringify({ schema: 1, app: 'english-reader', exportedAt: '2026-01-02T03:04:05.000Z', settings: { theme: 'dark' }, vocab: { zebra: { addedAt: 1, lastAt: 2, count: 3, mastered: false, snap: { zh: 'n. 斑马' }, ctx: [] }, go: { addedAt: 0, lastAt: 9, count: 4, mastered: false, snap: { zh: 'vi. 去' }, ctx: [] } } }));
+  await page.setInputFiles('#import-file', '/tmp/er-old-vocab.json');
+  await page.waitForSelector('#import-dialog');
+  check('H: old vocab-only file accepted, dialog says it has no reading history', /2 个生词/.test(await page.locator('#import-summary').innerText()) && /没有阅读记录/.test(await page.locator('#import-summary').innerText()));
+  await page.click('#import-merge');
+  await page.waitForTimeout(150);
+  const afterOld = await page.evaluate(() => ({ v: JSON.parse(localStorage.getItem('ra:v1:vocab')), p: JSON.parse(localStorage.getItem('ra:v1:progress')), s: JSON.parse(localStorage.getItem('ra:v1:settings') || '{}') }));
+  check('H: old vocab-only import merges words, history untouched, settings not imported', 'zebra' in afterOld.v && afterOld.v.go.count === 4 && afterOld.v.go.lastAt === 9 && isDeepStrictEqual(afterOld.p, before) && afterOld.s.theme !== 'dark');
+  // a bare vocab map (no app / schema field at all)
+  writeFileSync('/tmp/er-bare.json', JSON.stringify({ yak: { addedAt: 5, lastAt: 5, count: 1, mastered: false, snap: { zh: 'n. 牦牛' }, ctx: [] } }));
+  await page.setInputFiles('#import-file', '/tmp/er-bare.json');
+  await page.waitForSelector('#import-dialog');
+  await page.click('#import-merge');
+  await page.waitForTimeout(150);
+  check('H: bare vocab map (no schema field) imports by merge', await page.evaluate(() => { const v = JSON.parse(localStorage.getItem('ra:v1:vocab')); return 'yak' in v && 'zebra' in v && 'go' in v; }));
+  // merge rules for the history
+  const now = Date.now();
+  writeFileSync('/tmp/er-merge.json', JSON.stringify({ schema: 2, app: 'english-reader', exportedAt: new Date().toISOString(), vocab: {}, history: {
+    'b1-001': { status: 'unread', scroll: 0, updatedAt: 1 }, // older than local "read" → ignored
+    'b1-002': { status: 'read', scroll: 1, updatedAt: now + 60000, readAt: now + 60000 }, // newer → wins
+    'b2-001': { status: 'read', scroll: 1, updatedAt: 5, readAt: 5 }, // new id → added
+    'c1-050': { status: 'reading', scroll: 0.5, updatedAt: 5 }, // new id → added
+  } }));
+  await page.setInputFiles('#import-file', '/tmp/er-merge.json');
+  await page.waitForSelector('#import-dialog');
+  check('H: dialog counts the file\'s reading history', /4 条阅读记录（其中已读 2 篇）/.test(await page.locator('#import-summary').innerText()), await page.locator('#import-summary').innerText());
+  await page.click('#import-merge');
+  await page.waitForTimeout(150);
+  const pm = await page.evaluate(() => JSON.parse(localStorage.getItem('ra:v1:progress')));
+  check('H: merge keeps the newer change per article, adds new ids, keeps local-only ids', pm['b1-001'].status === 'read' && pm['b1-001'].readAt === 1000 && pm['b1-002'].status === 'read' && pm['b2-001'].readAt === 5 && pm['c1-050'].scroll === 0.5 && pm['b1-003'].status === 'read' && pm['cl-002'].status === 'read' && Object.keys(pm).length === 7, JSON.stringify(pm));
+  check('H: merge toast reports added / updated', /新增 2 条、更新 1 条阅读记录/.test(await page.locator('.toast').last().innerText()), await page.locator('.toast').last().innerText());
+  check('H: progress lines follow the import (B1 3, B2 1)', /已读 3 \/ 100/.test(await page.locator('#settings-history .hs-row[data-k="B1"]').innerText()) && /已读 1 \/ 100/.test(await page.locator('#settings-history .hs-row[data-k="B2"]').innerText()));
+  await page.setInputFiles('#import-file', '/tmp/er-merge.json');
+  await page.waitForSelector('#import-dialog');
+  await page.click('#import-merge');
+  await page.waitForTimeout(150);
+  check('H: importing the same file twice changes nothing', isDeepStrictEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('ra:v1:progress'))), pm) && /新增 0 条、更新 0 条/.test(await page.locator('.toast').last().innerText()));
+  // round trip: export → wipe → import
+  const [dlR] = await Promise.all([page.waitForEvent('download'), page.click('#export-btn')]);
+  await dlR.saveAs('/tmp/er-roundtrip.json');
+  const snap = await page.evaluate(() => ({ p: JSON.parse(localStorage.getItem('ra:v1:progress')), v: JSON.parse(localStorage.getItem('ra:v1:vocab')) }));
+  await page.evaluate(() => { localStorage.setItem('ra:v1:progress', '{}'); localStorage.setItem('ra:v1:vocab', '{}'); });
+  await page.reload();
+  await page.waitForSelector('#settings-history .hs-row');
+  await page.setInputFiles('#import-file', '/tmp/er-roundtrip.json');
+  await page.waitForSelector('#import-dialog');
+  await page.click('#import-merge');
+  await page.waitForTimeout(150);
+  check('H: export → wipe → import restores history and vocab exactly', isDeepStrictEqual(await page.evaluate(() => ({ p: JSON.parse(localStorage.getItem('ra:v1:progress')), v: JSON.parse(localStorage.getItem('ra:v1:vocab')) })), snap));
+  writeFileSync('/tmp/er-v3.json', JSON.stringify({ ...exH, schema: 3 }));
+  await page.setInputFiles('#import-file', '/tmp/er-v3.json');
+  await page.waitForTimeout(200);
+  check('H: newer schema (3) rejected with a message, nothing changed', /schema 版本（3）/.test(await page.locator('.toast').last().innerText()) && (await page.locator('#import-dialog').count()) === 0);
+  check('H: no console errors in reading-history flows', page.errors.length === 0, page.errors.join('; '));
+  await page.context().close();
+  }
 
   // ------------------------------------------------------------ mobile
   section('Mobile viewport (375×667, touch)');
@@ -898,10 +1032,21 @@ try {
     await page.waitForSelector('.card .card-gloss');
     check(`${label}: offline classic page + gloss popup + dictionary work`, (await page.locator('.card .card-defs').count()) === 1);
     await page.keyboard.press('Escape');
+    await page.click('#cl-status');
+    await page.goto(base + '#/classics');
+    await page.waitForSelector('.classic-card');
+    await page.check('#cl-only-unread');
+    check(`${label}: offline reading history: mark read → badge, 只看未读, 名著 1 / ${NCL}`, (await page.locator('.classic-card').count()) === NCL - 1 && /已读 1 \/ 100/.test(await page.locator('.hs-row[data-k="classics"]').innerText()) && (await page.evaluate(() => JSON.parse(localStorage.getItem('ra:v1:progress'))['cl-030'].readAt > 0)));
+    await page.uncheck('#cl-only-unread');
+    check(`${label}: offline read badge on the classic`, (await page.locator('.classic-card[data-id="cl-030"] .badge-read').count()) === 1);
     await page.goto(base + '#/settings');
     await page.waitForSelector('#offline');
     await page.waitForFunction(() => /已缓存/.test(document.querySelector('#offline').textContent), null, { timeout: 5000 });
     check(`${label}: settings shows offline ready`, /已缓存/.test(await page.locator('#offline').innerText()));
+    const [dlO] = await Promise.all([page.waitForEvent('download'), page.click('#export-btn')]);
+    await dlO.saveAs('/tmp/er-offline.json');
+    const exO = JSON.parse(readFileSync('/tmp/er-offline.json', 'utf8'));
+    check(`${label}: offline export includes the reading history (schema 2)`, exO.schema === 2 && exO.history['cl-030']?.status === 'read' && (await page.locator('#settings-history .hs-row').count()) === 4);
     await page.context().setOffline(false);
     await page.context().close();
   }

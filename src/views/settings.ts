@@ -1,6 +1,8 @@
 import { h, toast } from '../dom.ts';
 import { backupControls } from '../backup-ui.ts';
 import { getVersionInfo, offlineStatus } from '../pwa.ts';
+import { loadPools, renderHistorySummary } from './history.ts';
+import type { Pools } from './history.ts';
 import { STORAGE_WARN_BYTES, WPM_OPTIONS, getMeta, getSettings, onChange, resetSettings, setSettings, storageUsage } from '../store.ts';
 import type { Settings } from '../store.ts';
 import { hasEnglishVoice, onVoicesChanged, ttsSupported } from '../tts.ts';
@@ -26,6 +28,9 @@ export function mountSettings(root: HTMLElement): () => void {
   const offlineLine = h('div', { class: 'muted', id: 'offline' }, '检查中…');
   const backupLine = h('div', { class: 'muted small', id: 'last-backup' });
   const voiceHint = h('p', { class: 'muted small', id: 'voice-hint', hidden: true });
+  const historyBox = h('section', { class: 'history-summary', id: 'settings-history' }, h('span', { class: 'muted small' }, '读取中…'));
+  let pools: Pools | null = null;
+  void loadPools().then((p) => { pools = p; renderHistorySummary(historyBox, p); }).catch(() => historyBox.replaceChildren('文章索引读取失败'));
 
   function fillDynamic() {
     const used = storageUsage();
@@ -48,7 +53,8 @@ export function mountSettings(root: HTMLElement): () => void {
         toggle('点击查词时自动收录到生词本', 'autoCollect'),
         toggle('读到文末自动标记为已读', 'autoMarkRead'),
         toggle('在正文中标出生词本里的词', 'highlightKnown', '淡淡的底色，已掌握的词不标'),
-        h('div', { class: 'setting' }, h('div', { class: 'setting-label' }, '数据备份'), backupControls(), backupLine),
+        h('div', { class: 'setting' }, h('div', { class: 'setting-label' }, '阅读记录'), historyBox),
+        h('div', { class: 'setting' }, h('div', { class: 'setting-label' }, '数据备份'), backupControls(), h('div', { class: 'muted small' }, '生词本和阅读记录一起导出为一个 JSON 文件（含格式版本号）。导入时与本机数据合并，不会覆盖；也能导入旧版只含生词本的导出文件。'), backupLine),
         h('div', { class: 'setting' }, h('div', { class: 'setting-label' }, '本地存储用量'), usageLine),
         h('div', { class: 'setting' }, h('div', { class: 'setting-label' }, '离线使用'), offlineLine),
         h('div', { class: 'setting' }, h('div', { class: 'setting-label' }, '版本'), versionLine, h('a', { href: '#/about' }, '关于与致谢（数据来源与许可）')),
@@ -69,6 +75,6 @@ export function mountSettings(root: HTMLElement): () => void {
   navigator.storage?.persist?.().catch(() => {});
   const offVoices = () => fillDynamic();
   onVoicesChanged(offVoices);
-  const off = onChange((w) => w === 'settings' && fillDynamic());
+  const off = onChange((w) => { if (w === 'settings') fillDynamic(); if ((w === 'progress' || w === 'all') && pools) renderHistorySummary(historyBox, pools); });
   return () => off();
 }

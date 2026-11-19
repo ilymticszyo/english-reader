@@ -270,3 +270,17 @@ html[data-theme='dark'] .spoiler-note { background: #3d2c10; color: #ffcf7a; }
 @media (max-width: 430px) {
   .brand-txt { display: none; }
 }
+
+/* 阅读记录: progress lines + read badge */
+.history-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px 14px; margin: 6px 2px 12px; }
+.hs-row { display: grid; grid-template-columns: auto 1fr; grid-template-areas: 'k n' 'bar bar'; align-items: baseline; gap: 2px 8px; font-size: 0.85rem; color: var(--muted); }
+.hs-row.current { color: var(--text); }
+.hs-k { grid-area: k; font-weight: 700; }
+.hs-n { grid-area: n; text-align: right; font-variant-numeric: tabular-nums; }
+.hs-bar { grid-area: bar; display: block; height: 6px; border-radius: 4px; background: var(--surface-2); overflow: hidden; }
+.hs-fill { display: block; height: 100%; width: 0; background: var(--ok); }
+.hs-row.current .hs-fill { background: var(--accent); }
+.settings .history-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 4px 0 0; }
+@media (max-width: 560px) { .history-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.status.badge-read { background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--ok); border-radius: 6px; padding: 1px 7px; font-weight: 700; }
+.card-item.is-read .ci-title { color: var(--muted); }

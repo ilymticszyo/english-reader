@@ -3,11 +3,14 @@ import { loadClassicsIndex, loadIndex } from '../data.ts';
 import type { ClassicMeta } from '../shared/types.ts';
 import { LEVELS } from '../shared/types.ts';
 import type { ArticleMeta, Level } from '../shared/types.ts';
+import { loadPools, renderHistorySummary } from './history.ts';
 import { getProgress, getSettings, getStatus, minutesOf, onChange, setSettings } from '../store.ts';
 import type { Status } from '../store.ts';
 
 const STATUS_LABEL: Record<Status, string> = { unread: '未读', reading: '在读', read: '已读' };
-const filters = { topic: '', status: '' as '' | Status, q: '' };
+const filters = { topic: '', status: '' as '' | Status, q: '', onlyUnread: false };
+/** list-card status: a clear ✓ badge once read */
+export const statusBadge = (st: Status) => h('span', { class: `status st-${st}` + (st === 'read' ? ' badge-read' : ''), title: st === 'read' ? '已读' : undefined }, st === 'read' ? '✓ 已读' : STATUS_LABEL[st]);
 
 export async function mountList(root: HTMLElement): Promise<() => void> {
   root.append(h('p', { class: 'muted' }, '加载中…'));
@@ -17,9 +20,10 @@ export async function mountList(root: HTMLElement): Promise<() => void> {
   clear(root);
   let level: Level = getSettings().lastLevel;
   const all = index.articles;
+  const pools = await loadPools();
 
   const tabs = h('div', { class: 'tabs', role: 'tablist' });
-  const progressLine = h('div', { class: 'progress-line muted' });
+  const progressLine = h('section', { class: 'history-summary' });
   const cont = h('div', { class: 'continue' });
   const controls = h('div', { class: 'filters' });
   const list = h('div', { class: 'cards', role: 'list' });
@@ -29,7 +33,8 @@ export async function mountList(root: HTMLElement): Promise<() => void> {
   const statusSel = h('select', { 'aria-label': '按阅读状态筛选', onchange: (e: Event) => { filters.status = (e.target as HTMLSelectElement).value as Status; renderList(); } },
     h('option', { value: '' }, '全部状态'), ...(['unread', 'reading', 'read'] as Status[]).map((s) => h('option', { value: s }, STATUS_LABEL[s])));
   const search = h('input', { type: 'search', placeholder: '搜索标题…', 'aria-label': '标题关键词', value: filters.q, oninput: (e: Event) => { filters.q = (e.target as HTMLInputElement).value; renderList(); } });
-  controls.append(search, topicSel, statusSel);
+  const onlyUnread = h('input', { type: 'checkbox', id: 'only-unread', checked: filters.onlyUnread, onchange: (e: Event) => { filters.onlyUnread = (e.target as HTMLInputElement).checked; renderList(); } });
+  controls.append(search, topicSel, statusSel, h('label', { class: 'check', for: 'only-unread' }, onlyUnread, '只看未读'));
   statusSel.value = filters.status;
 
   const renderTabs = () => {
@@ -54,8 +59,8 @@ export async function mountList(root: HTMLElement): Promise<() => void> {
 
   const card = (a: ArticleMeta) => {
     const st = getStatus(a.id);
-    return h('a', { class: 'card-item', role: 'listitem', href: `#/read/${a.id}`, dataset: { id: a.id } },
-      h('div', { class: 'ci-top' }, h('span', { class: `badge lv lv-${a.level}` }, a.level), h('span', { class: `status st-${st}` }, STATUS_LABEL[st])),
+    return h('a', { class: 'card-item' + (st === 'read' ? ' is-read' : ''), role: 'listitem', href: `#/read/${a.id}`, dataset: { id: a.id } },
+      h('div', { class: 'ci-top' }, h('span', { class: `badge lv lv-${a.level}` }, a.level), statusBadge(st)),
       h('h2', { class: 'ci-title' }, a.title),
       h('div', { class: 'ci-meta muted' }, `${a.wordCount} 词 · 约 ${minutesOf(a.wordCount)} 分钟`),
       h('div', { class: 'ci-topics' }, ...a.topics.map((t) => h('span', { class: 'chip' }, topicLabel(t)))),
@@ -84,10 +89,10 @@ export async function mountList(root: HTMLElement): Promise<() => void> {
   const renderList = () => {
     clear(list);
     const q = filters.q.trim().toLowerCase();
-    const items = all.filter((a) => a.level === level && (!filters.topic || a.topics.includes(filters.topic)) && (!filters.status || getStatus(a.id) === filters.status) && (!q || a.title.toLowerCase().includes(q)));
+    const items = all.filter((a) => a.level === level && (!filters.topic || a.topics.includes(filters.topic)) && (!filters.status || getStatus(a.id) === filters.status) && (!filters.onlyUnread || getStatus(a.id) !== 'read') && (!q || a.title.toLowerCase().includes(q)));
     if (!items.length) {
       list.append(h('div', { class: 'empty' }, h('p', null, '没有符合条件的文章。'),
-        h('button', { class: 'btn', type: 'button', onclick: () => { filters.topic = ''; filters.status = ''; filters.q = ''; search.value = ''; statusSel.value = ''; renderAll(); } }, '清除筛选')));
+        h('button', { class: 'btn', type: 'button', onclick: () => { filters.topic = ''; filters.status = ''; filters.q = ''; filters.onlyUnread = false; search.value = ''; statusSel.value = ''; onlyUnread.checked = false; renderAll(); } }, '清除筛选')));
       return;
     }
     for (const a of items) list.append(card(a));
@@ -95,9 +100,7 @@ export async function mountList(root: HTMLElement): Promise<() => void> {
 
   const renderAll = () => {
     renderTabs();
-    const arts = all.filter((a) => a.level === level);
-    const done = arts.filter((a) => getStatus(a.id) === 'read').length;
-    progressLine.textContent = `${level} 已读 ${done} / ${arts.length} 篇`;
+    renderHistorySummary(progressLine, pools, level);
     renderContinue();
     renderTopics();
     renderList();

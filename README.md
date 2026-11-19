@@ -14,7 +14,8 @@ npm run dev        # 生成数据 + 启动 Vite 开发服务器
 npm run build      # 生成数据 → 类型检查 → vite build → 生成 sw.js，输出 dist/
 npm run package    # build + 把 dist/ 打包成 english-reader-dist.zip
 npm run preview    # 本地预览 dist/
-npm test           # 词形还原回归 + 端到端测试（需先 npm run build）
+npm test           # 词形还原回归 + 单元测试（阅读记录/备份）+ 端到端测试（需先 npm run build）
+npm run test:unit  # 只跑阅读记录 / 备份格式的单元测试
 npm run screenshots
 ```
 
@@ -66,6 +67,17 @@ npm run screenshots
 - 原文抽取：`PG_DIR=<存放 pgN.txt 的目录> node scripts/classics-extract.mjs fill` 按 frontmatter 的 `sourceStart`/`sourceEnd` 重新生成 `## Excerpt`（去掉 PG 页眉页脚、插图说明、`_斜体_` 标记）。
 - 构建输出 `public/data/classics/{index.json, cl-NNN.json, archaisms.json, dict.json}`；`dict.json` 只含主词典缺少的词形/词条。Service Worker 自动预缓存，`version.json` 中有 `classics` 计数。
 - 截图：`node scripts/screenshots-classics.mjs` → `screenshots/classics-*.png`。
+
+## 阅读记录（0.6.0）
+
+- **已读标记**：读到文末自动标记已读（设置里可关），文章/名著页顶部和文末的按钮可手动标记或改回未读。
+- **列表**：B1/B2/C1 文章列表和名著列表的卡片上有「✓ 已读」徽标；「只看未读」复选框隐藏已读的（在读的仍显示），可与话题/状态/作者/难度筛选叠加。
+- **进度**：文章列表、名著列表和设置页都显示四条进度线：B1、B2、C1、名著（已读 X / 100）。只统计当前内容里存在的 ID。
+- **阅读位置**：在读的文章/选段记住滚动位置（正文的比例，不是像素），重新打开时恢复。
+- **存储**：仍是 `localStorage` 的 `ra:v1:progress`，按文章 ID（`b1-001` / `cl-001` …）为键：`{ status: 'unread'|'reading'|'read', scroll: 0..1, updatedAt, readAt? }`。`readAt` 是读完的时间，改回未读时删除。`ra:v1:meta.schema` 从 1 升到 2：旧数据在首次加载时原地迁移（保留所有条目和未知字段，已读条目补 `readAt = updatedAt`），迁移前的原值另存一份在 `ra:v1:progress.bak-v1`。
+- **导出**：一个 JSON 文件 `{ schema: 2, app: 'english-reader', exportedAt, history, vocab, settings }`——`history` 就是上面的阅读记录，`vocab` 是生词本。
+- **导入**：只合并，不覆盖。生词按原规则合并（次数取大、例句合并、两边都掌握才算掌握）；阅读记录逐篇取较新的那次改动（所以另一台设备上「改回未读」也会生效），同一时间则取更靠后的状态，`readAt` 取最早。设置不导入。兼容旧文件：schema 1（`progress` 字段或只有 `vocab`）、没有 schema 的 `{ vocab }` 或裸生词本对象；schema 高于 2 的文件会被拒绝并提示更新。
+- 纯逻辑在 `src/shared/history.ts`，单元测试 `scripts/test-unit.ts`；截图 `node scripts/screenshots-history.mjs` → `screenshots/history-*.png`。
 
 ## 目录结构
 

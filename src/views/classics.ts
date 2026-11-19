@@ -2,19 +2,20 @@ import { clear, h } from '../dom.ts';
 import { loadClassicsIndex } from '../data.ts';
 import { LEVELS, LEVEL_RANK } from '../shared/types.ts';
 import type { ClassicMeta, Level } from '../shared/types.ts';
+import { statusBadge } from './list.ts';
+import { loadPools, renderHistorySummary } from './history.ts';
 import { getProgress, getStatus, minutesOf, onChange } from '../store.ts';
-import type { Status } from '../store.ts';
 
-const STATUS_LABEL: Record<Status, string> = { unread: '未读', reading: '在读', read: '已读' };
 type Sort = 'order' | 'level' | 'short';
 /** Shared with the classic reader so prev / next walk the same filtered list (G8). Kept for the session. */
-export const classicFilters = { level: '' as '' | Level, author: '', q: '', sort: 'order' as Sort };
+export const classicFilters = { level: '' as '' | Level, author: '', q: '', sort: 'order' as Sort, onlyUnread: false };
 
 export function filterClassics(all: ClassicMeta[]): ClassicMeta[] {
   const q = classicFilters.q.trim().toLowerCase();
   const items = all.filter((c) =>
     (!classicFilters.level || c.refLevel === classicFilters.level) &&
     (!classicFilters.author || c.authorId === classicFilters.author) &&
+    (!classicFilters.onlyUnread || getStatus(c.id) !== 'read') &&
     (!q || [c.work, c.scene, c.title, c.author, c.chapter].some((s) => s.toLowerCase().includes(q))));
   if (classicFilters.sort === 'level') items.sort((a, b) => LEVEL_RANK[a.refLevel] - LEVEL_RANK[b.refLevel] || a.id.localeCompare(b.id));
   else if (classicFilters.sort === 'short') items.sort((a, b) => a.wordCount - b.wordCount || a.id.localeCompare(b.id));
@@ -26,6 +27,7 @@ export async function mountClassics(root: HTMLElement): Promise<() => void> {
   const index = await loadClassicsIndex();
   clear(root);
   const all = index.excerpts;
+  const pools = await loadPools();
 
   const authors = [...new Map(all.map((c) => [c.authorId, c.author])).entries()].sort((a, b) => a[1].localeCompare(b[1]));
   const levelSel = h('select', { 'aria-label': '按参考难度筛选', id: 'cl-level', onchange: (e: Event) => { classicFilters.level = (e.target as HTMLSelectElement).value as Level; renderList(); } },
@@ -39,7 +41,8 @@ export async function mountClassics(root: HTMLElement): Promise<() => void> {
   authorSel.value = classicFilters.author;
   sortSel.value = classicFilters.sort;
 
-  const progressLine = h('div', { class: 'progress-line muted' });
+  const progressLine = h('section', { class: 'history-summary' });
+  const onlyUnread = h('input', { type: 'checkbox', id: 'cl-only-unread', checked: classicFilters.onlyUnread, onchange: (e: Event) => { classicFilters.onlyUnread = (e.target as HTMLInputElement).checked; renderList(); } });
   const cont = h('div', { class: 'continue' });
   const count = h('div', { class: 'muted small cl-count', 'aria-live': 'polite' });
   const list = h('div', { class: 'cards', role: 'list' });
@@ -47,16 +50,16 @@ export async function mountClassics(root: HTMLElement): Promise<() => void> {
     h('h1', null, '名著赏析'),
     h('p', { class: 'muted cl-intro' }, '公版经典名著选段（Project Gutenberg），每篇含英文导读、原文与赏析。难度为参考值，不计入 B1 / B2 / C1 分级。'),
     progressLine, cont,
-    h('div', { class: 'filters' }, search, levelSel, authorSel, sortSel),
+    h('div', { class: 'filters' }, search, levelSel, authorSel, sortSel, h('label', { class: 'check', for: 'cl-only-unread' }, onlyUnread, '只看未读')),
     count, list);
 
   const card = (c: ClassicMeta) => {
     const st = getStatus(c.id);
-    return h('a', { class: 'card-item classic-card', role: 'listitem', href: `#/classics/${c.id}`, dataset: { id: c.id } },
+    return h('a', { class: 'card-item classic-card' + (st === 'read' ? ' is-read' : ''), role: 'listitem', href: `#/classics/${c.id}`, dataset: { id: c.id } },
       h('div', { class: 'ci-top' },
         h('span', { class: `badge lv lv-${c.refLevel}`, title: '参考难度' }, `参考 ${c.refLevel}`),
         c.spoiler ? h('span', { class: 'badge spoiler', title: '含剧透：选段涉及结局或关键反转' }, '⚠ 剧透') : null,
-        h('span', { class: `status st-${st}` }, STATUS_LABEL[st])),
+        statusBadge(st)),
       h('div', { class: 'ci-work' }, h('cite', null, c.work), h('span', { class: 'muted' }, ` · ${c.author}`)),
       h('h2', { class: 'ci-title', lang: 'en' }, c.title),
       h('div', { class: 'ci-scene muted small', lang: 'en' }, `${c.chapter} — ${c.scene}`),
@@ -81,7 +84,8 @@ export async function mountClassics(root: HTMLElement): Promise<() => void> {
     if (!items.length) {
       list.append(h('div', { class: 'empty' }, h('p', null, '没有符合条件的名著选段。'),
         h('button', { class: 'btn', type: 'button', id: 'cl-clear', onclick: () => {
-          Object.assign(classicFilters, { level: '', author: '', q: '' });
+          Object.assign(classicFilters, { level: '', author: '', q: '', onlyUnread: false });
+          onlyUnread.checked = false;
           search.value = '';
           levelSel.value = '';
           authorSel.value = '';
@@ -93,8 +97,7 @@ export async function mountClassics(root: HTMLElement): Promise<() => void> {
   };
 
   const renderAll = () => {
-    const done = all.filter((c) => getStatus(c.id) === 'read').length;
-    progressLine.textContent = `名著已读 ${done} / ${all.length} 篇`;
+    renderHistorySummary(progressLine, pools, 'classics');
     renderContinue();
     renderList();
   };

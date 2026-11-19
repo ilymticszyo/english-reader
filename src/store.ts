@@ -1,9 +1,13 @@
 // localStorage-backed user data. Prefix ra:v1:, JSON strings. All writes are guarded (quota errors are surfaced).
 import { toast } from './dom.ts';
 import type { Level } from './shared/types.ts';
+import { PROGRESS_SCHEMA, applyPatch, makeBackup, mergeProgress, mergeVocab, migrateProgress, parseBackupText } from './shared/history.ts';
+import type { Backup, ParsedBackup, Progress, ProgressMap, Status, VocabCtx, VocabItem, VocabMap } from './shared/history.ts';
+export type { Backup, ParsedBackup, Progress, ProgressMap, Status, VocabCtx, VocabItem, VocabMap };
 
 export const PREFIX = 'ra:v1:';
-export const SCHEMA = 1;
+/** storage schema (ra:v1:meta.schema); 2 = progress entries carry readAt (0.6.0) */
+export const SCHEMA = PROGRESS_SCHEMA;
 
 export interface Settings {
   fontSize: number; // 0..3
@@ -28,31 +32,6 @@ export const DEFAULT_SETTINGS: Settings = {
 };
 export const WPM_OPTIONS = [120, 160, 200, 250, 300];
 export const minutesOf = (wordCount: number) => Math.max(1, Math.ceil(wordCount / (getSettings().wpm || 200)));
-
-export type Status = 'unread' | 'reading' | 'read';
-export interface Progress {
-  status: Status;
-  scroll: number; // 0..1 fraction of article body
-  updatedAt: number;
-}
-export interface VocabCtx {
-  a: string; // article id
-  v: number; // article version
-  p: number; // paragraph index
-  s: string; // sentence text
-  form: string;
-  at: number;
-}
-export interface VocabItem {
-  addedAt: number;
-  lastAt: number;
-  count: number;
-  mastered: boolean;
-  snap: { p?: string; zh?: string; cefr?: string };
-  ctx: VocabCtx[];
-}
-export type VocabMap = Record<string, VocabItem>;
-export type ProgressMap = Record<string, Progress>;
 
 function read<T>(name: string, fallback: T): T {
   try {
@@ -88,10 +67,32 @@ export const onChange = (fn: Listener) => {
 const emit: Listener = (w) => listeners.forEach((f) => f(w));
 
 let settings: Settings = { ...DEFAULT_SETTINGS, ...read<Partial<Settings>>('settings', {}) };
-let progress: ProgressMap = read<ProgressMap>('progress', {});
 let vocab: VocabMap = read<VocabMap>('vocab', {});
-if (!localStorage.getItem(PREFIX + 'meta')) write('meta', { schema: SCHEMA, createdAt: Date.now() });
-export const getMeta = () => read<{ schema: number; createdAt: number; lastBackupAt?: number }>('meta', { schema: SCHEMA, createdAt: 0 });
+type Meta = { schema: number; createdAt: number; lastBackupAt?: number; migratedAt?: number };
+export const getMeta = () => read<Meta>('meta', { schema: SCHEMA, createdAt: 0 });
+let progress: ProgressMap = loadProgress();
+
+/** Reads ra:v1:progress and migrates older entries in place (schema 1 → 2: readAt added). Nothing is dropped:
+ *  the untouched old value is kept once under ra:v1:progress.bak-v<old schema>. */
+function loadProgress(): ProgressMap {
+  const metaRaw = localStorage.getItem(PREFIX + 'meta');
+  const raw = localStorage.getItem(PREFIX + 'progress');
+  let parsed: unknown = {};
+  try { parsed = raw ? JSON.parse(raw) : {}; } catch { parsed = {}; }
+  const map = migrateProgress(parsed);
+  if (!metaRaw) {
+    write('meta', { schema: SCHEMA, createdAt: Date.now() });
+    if (raw) write('progress', map);
+    return map;
+  }
+  const meta = getMeta();
+  if ((meta.schema ?? 1) < SCHEMA) {
+    try { if (raw) localStorage.setItem(`${PREFIX}progress.bak-v${meta.schema ?? 1}`, raw); } catch { /* quota: the migration itself is lossless */ }
+    write('progress', map);
+    write('meta', { ...meta, schema: SCHEMA, migratedAt: Date.now() });
+  }
+  return map;
+}
 export function markBackup() {
   write('meta', { ...getMeta(), lastBackupAt: Date.now() });
   emit('settings');
@@ -114,8 +115,7 @@ export function resetSettings() {
 export const getProgress = () => progress;
 export const getStatus = (id: string): Status => progress[id]?.status ?? 'unread';
 export function setProgress(id: string, patch: Partial<Progress>, silent = false) {
-  const cur = progress[id] ?? { status: 'unread' as Status, scroll: 0, updatedAt: 0 };
-  progress[id] = { ...cur, ...patch, updatedAt: Date.now() };
+  progress[id] = applyPatch(progress[id], patch, Date.now());
   write('progress', progress);
   if (!silent) emit('progress');
 }
@@ -177,70 +177,21 @@ export function setMastered(lemma: string, v: boolean) {
 }
 
 // ---------- backup ----------
-export interface Backup {
-  schema: number;
-  app: 'english-reader';
-  exportedAt: string;
-  settings: Settings;
-  progress: ProgressMap;
-  vocab: VocabMap;
-}
-export function exportBackup(): Backup {
-  return { schema: SCHEMA, app: 'english-reader', exportedAt: new Date().toISOString(), settings, progress, vocab };
-}
+/** One JSON file: reading history + vocab book (+ settings), with a schema version. */
+export const exportBackup = (): Backup<Settings> => makeBackup(progress, vocab, settings);
+export const parseBackup = (text: string): ParsedBackup => parseBackupText(text);
 
-export function parseBackup(text: string): Backup {
-  let o: any;
-  try {
-    o = JSON.parse(text);
-  } catch {
-    throw new Error('不是有效的 JSON 文件');
-  }
-  if (!o || o.app !== 'english-reader') throw new Error('这不是本应用导出的备份文件');
-  if (typeof o.schema !== 'number' || o.schema > SCHEMA) throw new Error(`备份文件的 schema 版本（${o.schema}）高于当前支持的版本（${SCHEMA}）`);
-  if (!o.vocab || typeof o.vocab !== 'object') throw new Error('备份文件缺少 vocab 字段');
-  return {
-    schema: o.schema,
-    app: 'english-reader',
-    exportedAt: o.exportedAt ?? '',
-    settings: { ...DEFAULT_SETTINGS, ...(o.settings ?? {}) },
-    progress: o.progress ?? {},
-    vocab: o.vocab,
-  };
-}
-
-export function importBackup(b: Backup, mode: 'merge' | 'overwrite') {
-  if (mode === 'overwrite') {
-    vocab = b.vocab;
-    progress = b.progress;
-    settings = { ...DEFAULT_SETTINGS, ...b.settings };
-  } else {
-    for (const [k, inc] of Object.entries(b.vocab)) {
-      const cur = vocab[k];
-      if (!cur) {
-        vocab[k] = inc;
-        continue;
-      }
-      const ctx = [...cur.ctx];
-      for (const c of inc.ctx) if (!ctx.some((x) => x.a === c.a && x.s === c.s)) ctx.push(c);
-      vocab[k] = {
-        addedAt: Math.min(cur.addedAt, inc.addedAt),
-        lastAt: Math.max(cur.lastAt, inc.lastAt),
-        count: Math.max(cur.count, inc.count),
-        mastered: cur.mastered && inc.mastered,
-        snap: cur.snap?.zh ? cur.snap : inc.snap,
-        ctx: ctx.slice(-5),
-      };
-    }
-    for (const [id, inc] of Object.entries(b.progress)) {
-      if (!progress[id] || progress[id].updatedAt < inc.updatedAt) progress[id] = inc;
-    }
-  }
+/** Import always merges (never replaces): local-only words / history stay, the newer change per article wins.
+ *  Settings in the file are ignored (they are device preferences). */
+export function importBackup(b: ParsedBackup): { wordsAdded: number; historyAdded: number; historyUpdated: number } {
+  const v = mergeVocab(vocab, b.vocab);
+  const p = mergeProgress(progress, b.history);
+  vocab = v.map;
+  progress = p.map;
   write('vocab', vocab);
   write('progress', progress);
-  write('settings', settings);
-  applyAppearance();
   emit('all');
+  return { wordsAdded: v.added, historyAdded: p.added, historyUpdated: p.updated };
 }
 
 export const STORAGE_WARN_BYTES = 4 * 1024 * 1024;

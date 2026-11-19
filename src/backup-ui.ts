@@ -1,9 +1,11 @@
 // Export / import UI shared by the vocabulary page and the settings page.
 import { h, toast } from './dom.ts';
-import { exportBackup, getVocab, importBackup, markBackup, parseBackup } from './store.ts';
+import { exportBackup, importBackup, markBackup, parseBackup } from './store.ts';
+import type { ParsedBackup } from './store.ts';
 
 export function exportDownload() {
-  const data = JSON.stringify(exportBackup(), null, 2);
+  const b = exportBackup();
+  const data = JSON.stringify(b, null, 2);
   const blob = new Blob([data], { type: 'application/json' });
   const a = h('a', { href: URL.createObjectURL(blob), download: `english-reader-backup-${new Date().toISOString().slice(0, 10)}.json` });
   document.body.append(a);
@@ -11,7 +13,7 @@ export function exportDownload() {
   a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 2000);
   markBackup();
-  toast(`已导出 ${Object.keys(getVocab()).length} 个生词（以及进度和设置）`);
+  toast(`已导出 ${Object.keys(b.vocab).length} 个生词和 ${Object.keys(b.history).length} 条阅读记录`);
 }
 
 export async function handleImportFile(input: HTMLInputElement) {
@@ -19,30 +21,32 @@ export async function handleImportFile(input: HTMLInputElement) {
   input.value = '';
   if (!f) return;
   try {
-    const b = parseBackup(await f.text());
-    askImportMode(Object.keys(b.vocab).length, b);
+    askImport(parseBackup(await f.text()));
   } catch (e) {
     toast('导入失败：' + (e as Error).message, undefined, 7000);
   }
 }
 
-function askImportMode(n: number, b: ReturnType<typeof parseBackup>) {
+function askImport(b: ParsedBackup) {
+  const nWords = Object.keys(b.vocab).length;
+  const nHist = Object.keys(b.history).length;
+  const nRead = Object.values(b.history).filter((p) => p.status === 'read').length;
   const dlg = h('div', { class: 'modal-back', role: 'presentation' });
   const close = () => dlg.remove();
-  const run = (mode: 'merge' | 'overwrite') => {
-    importBackup(b, mode);
+  const run = () => {
+    const r = importBackup(b);
     close();
-    toast(mode === 'merge' ? `已合并导入（文件内 ${n} 个生词）` : `已覆盖导入（${n} 个生词）`);
+    toast(`已合并导入：新增 ${r.wordsAdded} 个生词，新增 ${r.historyAdded} 条、更新 ${r.historyUpdated} 条阅读记录`);
   };
+  const kind = b.fileSchema === 0 ? '旧版生词本文件（无版本号）' : `备份格式 v${b.fileSchema}`;
   dlg.append(
-    h('div', { class: 'modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': '导入备份' },
+    h('div', { class: 'modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': '导入备份', id: 'import-dialog' },
       h('h2', null, '导入备份'),
-      h('p', null, `文件包含 ${n} 个生词${b.exportedAt ? `，导出于 ${b.exportedAt.slice(0, 10)}` : ''}。`),
-      h('p', { class: 'muted' }, '合并：保留现有数据并加入文件中的内容。覆盖：用文件内容替换当前的生词本、进度和设置。'),
+      h('p', { id: 'import-summary' }, `文件包含 ${nWords} 个生词` + (b.hasHistory ? `、${nHist} 条阅读记录（其中已读 ${nRead} 篇）` : '，没有阅读记录（只含生词本的旧版导出）') + (b.exportedAt ? `，导出于 ${b.exportedAt.slice(0, 10)}` : '') + '。'),
+      h('p', { class: 'muted small' }, `${kind}。导入会与现有数据合并，不会删除或替换本机的生词和阅读记录：同一个词合并查询次数和例句；同一篇文章以较新的那次改动为准。设置不会被导入。`),
       h('div', { class: 'modal-actions' },
-        h('button', { class: 'btn primary', type: 'button', id: 'import-merge', onclick: () => run('merge') }, '合并'),
-        h('button', { class: 'btn danger', type: 'button', id: 'import-overwrite', onclick: () => run('overwrite') }, '覆盖'),
-        h('button', { class: 'btn', type: 'button', onclick: close }, '取消'))),
+        h('button', { class: 'btn primary', type: 'button', id: 'import-merge', onclick: run }, '合并导入'),
+        h('button', { class: 'btn', type: 'button', id: 'import-cancel', onclick: close }, '取消'))),
   );
   dlg.addEventListener('click', (e) => e.target === dlg && close());
   document.body.append(dlg);
