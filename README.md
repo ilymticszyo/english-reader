@@ -57,6 +57,16 @@ npm run screenshots
    - `terms`：ECDICT 没有的专名、生造或专业术语 → 一句中文释义。
 5. 改完重新 `npm run build`，再 `npm run test:lemma`。有新的易错词就补进 `tests/lemma-cases.json`。
 
+## 名著赏析（#/classics）
+
+顶部导航「名著」，独立于 B1/B2/C1 三个分级池（不计入覆盖率门禁，构建报告里只做参考统计）。共 30 篇公版名著选段（Project Gutenberg），每篇：英文导读 Background → 原文 The Excerpt → 本篇注释 → 英文赏析 Appreciation → Sentences to imitate（3–5 句原文仿写句）。
+
+- 源文件：`content/classics/cl-NNN.md`（frontmatter 含 `edition: Project Gutenberg #N`、`url`、`year`、`pdNote`、`pdVerified: true`，缺一即构建失败）；注释行 `- form | English note | 中文` 或 `- form => 词典词 | note | 中文`（方言/误导词指向正确词条）。
+- 共用古旧词表：`content/classics/archaisms.json`（thee, hath, 'tis, o'er …）；名著专用人名地名：`content/classics/terms.json`（只进名著词典，不影响文章）。
+- 原文抽取：`PG_DIR=<存放 pgN.txt 的目录> node scripts/classics-extract.mjs fill` 按 frontmatter 的 `sourceStart`/`sourceEnd` 重新生成 `## Excerpt`（去掉 PG 页眉页脚、插图说明、`_斜体_` 标记）。
+- 构建输出 `public/data/classics/{index.json, cl-NNN.json, archaisms.json, dict.json}`；`dict.json` 只含主词典缺少的词形/词条。Service Worker 自动预缓存，`version.json` 中有 `classics` 计数。
+- 截图：`node scripts/screenshots-classics.mjs` → `screenshots/classics-*.png`。
+
 ## 目录结构
 
 ```

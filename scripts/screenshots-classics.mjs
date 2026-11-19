@@ -1,0 +1,51 @@
+// Screenshots of the classics section (名著赏析).  Usage: npm run build && node scripts/screenshots-classics.mjs
+import { chromium } from 'playwright';
+import { mkdirSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { serve } from './static-server.mjs';
+
+const ROOT = resolve(import.meta.dirname, '..');
+const OUT = resolve(ROOT, 'screenshots');
+mkdirSync(OUT, { recursive: true });
+const { server, url } = await serve(resolve(ROOT, 'dist'));
+const browser = await chromium.launch();
+
+let ctx = await browser.newContext({ viewport: { width: 1280, height: 860 } });
+let page = await ctx.newPage();
+await page.goto(url + '#/classics');
+await page.waitForSelector('.classic-card');
+await page.screenshot({ path: `${OUT}/classics-list.png` });
+await page.goto(url + '#/classics/cl-001');
+await page.waitForSelector('.cl-excerpt-body .w');
+await page.screenshot({ path: `${OUT}/classics-reader.png` });
+await page.locator('.cl-notes').scrollIntoViewIfNeeded();
+await page.evaluate(() => window.scrollBy(0, 200));
+await page.screenshot({ path: `${OUT}/classics-notes.png` });
+await page.goto(url + '#/classics/cl-015');
+await page.waitForSelector('.cl-excerpt-body .w.gl');
+const g = page.locator('.cl-excerpt-body .w.gl[data-g="warn\'t"]').first();
+await g.scrollIntoViewIfNeeded();
+await page.evaluate(() => window.scrollBy(0, -120));
+await g.click();
+await page.waitForSelector('.card .card-gloss');
+await page.screenshot({ path: `${OUT}/classics-gloss.png` });
+await ctx.close();
+
+ctx = await browser.newContext({ viewport: { width: 375, height: 667 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
+page = await ctx.newPage();
+await page.goto(url + '#/classics/cl-030');
+await page.waitForSelector('.cl-excerpt-body .w.gl');
+const y = page.locator('.cl-excerpt-body .w.gl[data-g="yonder"]').first();
+await y.scrollIntoViewIfNeeded();
+await y.tap();
+await page.waitForSelector('.card.sheet .card-gloss');
+await page.waitForTimeout(400);
+await page.screenshot({ path: `${OUT}/classics-gloss-mobile.png` });
+await page.keyboard.press('Escape');
+await page.locator('.notes-fab').tap();
+await page.waitForTimeout(200);
+await page.screenshot({ path: `${OUT}/classics-notes-drawer-mobile.png` });
+await ctx.close();
+await browser.close();
+server.close();
+console.log('classics screenshots saved to', OUT);

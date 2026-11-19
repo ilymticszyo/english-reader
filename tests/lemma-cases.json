@@ -2131,6 +2131,54 @@
     "in",
     "the"
    ]
+  ],
+  [
+   "'Tis a pity, and ’twas late.",
+   [
+    "'Tis",
+    "a",
+    "pity",
+    "and",
+    "’twas",
+    "late"
+   ]
+  ],
+  [
+   "He turned o'er the page, ne'er to return.",
+   [
+    "He",
+    "turned",
+    "o'er",
+    "the",
+    "page",
+    "ne'er",
+    "to",
+    "return"
+   ]
+  ],
+  [
+   "Let ’em go, said he; ’twere best.",
+   [
+    "Let",
+    "’em",
+    "go",
+    "said",
+    "he",
+    "’twere",
+    "best"
+   ]
+  ],
+  [
+   "The students' books and 'tisane' stay apart.",
+   [
+    "The",
+    "students",
+    "books",
+    "and",
+    "tisane",
+    "stay",
+    "apart"
+   ]
   ]
  ],
  "cefr": {
@@ -2211,5 +2259,45 @@
    "bacteria",
    "bacterium"
   ]
- ]
+ ],
+ "classics": {
+  "_doc": "Classics (名著赏析): [word, note headword or null, expected lemma] resolved over main dictionary + data/classics/dict.json with the note rules (resolveWithGloss). Every archaism in content/classics/archaisms.json must also resolve.",
+  "cases": [
+   [
+    "thee",
+    null,
+    "thee"
+   ],
+   [
+    "warn't",
+    "be",
+    "be"
+   ],
+   [
+    "'em",
+    "them",
+    "them"
+   ],
+   [
+    "o'er",
+    "over",
+    "over"
+   ],
+   [
+    "shewed",
+    "show",
+    "show"
+   ],
+   [
+    "knowed",
+    "know",
+    "know"
+   ],
+   [
+    "acknowledged",
+    null,
+    "acknowledge"
+   ]
+  ]
+ }
 }

@@ -642,6 +642,228 @@ try {
   }
 
   // ------------------------------------------------------------ offline (service worker)
+  // ------------------------------------------------------------ module G: classics (名著赏析)
+  section('G: classics (名著赏析)');
+  {
+    const CL = JSON.parse(readFileSync(resolve(ROOT, 'dist/data/classics/index.json'), 'utf8')).excerpts;
+    const clOf = (id) => JSON.parse(readFileSync(resolve(ROOT, `dist/data/classics/${id}.json`), 'utf8'));
+    const ARCH = JSON.parse(readFileSync(resolve(ROOT, 'dist/data/classics/archaisms.json'), 'utf8'));
+    const ver = JSON.parse(readFileSync(resolve(ROOT, 'dist/version.json'), 'utf8'));
+    const rep = JSON.parse(readFileSync(resolve(ROOT, 'reports/build-report.json'), 'utf8'));
+    const artIdx = JSON.parse(readFileSync(resolve(ROOT, 'dist/data/index.json'), 'utf8')).articles;
+    const clw = (page, text, scope = '.cl-excerpt-body', nth = 0) => page.locator(`${scope} .w`, { hasText: new RegExp(`^${text}$`) }).nth(nth);
+
+    // G1: separate pool, report-only, the three levels untouched
+    check('G1: 30 classics, ids cl-001…cl-030', CL.length === 30 && CL.every((c, i) => c.id === `cl-${String(i + 1).padStart(3, '0')}`));
+    check(`G1: article pools unchanged (B1/B2/C1 = ${PER} each, no cl- ids)`, ['B1', 'B2', 'C1'].every((l) => artIdx.filter((a) => a.level === l).length === PER) && !artIdx.some((a) => a.id.startsWith('cl-')));
+    check('G1: build report lists classics coverage as reference only (not gated)', !!rep.classics && /reference only/i.test(readFileSync(resolve(ROOT, 'reports/build-report.md'), 'utf8')), Object.keys(rep).join());
+    check('G1/SW: version.json lists the classics data (30 excerpts + index/dict/archaisms)', ver.classics === 30 && ['data/classics/index.json', 'data/classics/dict.json', 'data/classics/archaisms.json'].every((f) => ver.classicsData.includes(f)), JSON.stringify({ c: ver.classics }));
+    check('G1/SW: sw.js precaches every classics file', (() => { const sw = readFileSync(resolve(ROOT, 'dist/sw.js'), 'utf8'); return ver.classicsData.every((f) => sw.includes(`./${f}`)); })());
+
+    let page = await newPage();
+    await page.goto(url);
+    await page.waitForSelector('.card-item');
+    const navTexts = (await page.locator('.navlinks a').allTextContents()).map((s) => s.trim());
+    check('G1: top nav is 文章 / 名著 / 生词本 / 设置', navTexts.join('|') === '文章|名著|生词本|设置', navTexts.join('|'));
+    check('G1: 名著 is not a difficulty tab (still 3 tabs)', (await page.locator('.tab').count()) === 3 && !/名著/.test(await page.locator('.tabs').innerText()));
+    const navBox = await page.locator('.navlinks a[data-nav="classics"]').boundingBox();
+    check('G1: 名著 nav link is a ≥44px touch target', navBox.height >= 44);
+    await page.click('.navlinks a[data-nav="classics"]');
+    await page.waitForSelector('.classic-card');
+    check('G1: 名著 opens #/classics and is marked active', page.url().endsWith('#/classics') && (await page.locator('.navlinks a.active').innerText()).trim() === '名著');
+
+    // G2: list, cards, filters, search, empty state
+    check('G2: list shows all 30 excerpts', (await page.locator('.classic-card').count()) === 30);
+    const c1 = await page.locator('.classic-card[data-id="cl-001"]').innerText();
+    check('G2: card shows work, author, scene, ref level, words, minutes, status', /Pride and Prejudice/.test(c1) && /Jane Austen/.test(c1) && /Chapter 1/.test(c1) && /参考 B2/.test(c1) && /原文 \d+ 词/.test(c1) && /约 \d+ 分钟/.test(c1) && /未读/.test(c1), c1.replace(/\n/g, '|'));
+    const nSpoil = CL.filter((c) => c.spoiler).length;
+    check('G2: spoiler mark on exactly the spoiler excerpts', (await page.locator('.classic-card .badge.spoiler').count()) === nSpoil && (await page.locator('.classic-card[data-id="cl-003"] .badge.spoiler').count()) === 1 && (await page.locator('.classic-card[data-id="cl-001"] .badge.spoiler').count()) === 0, `${nSpoil}`);
+    check('G2: minutes = ceil((background + excerpt + appreciation) / 200)', CL.every((c) => c.minutes === Math.max(1, Math.ceil(c.totalWords / 200))) && new RegExp(`约 ${CL[0].minutes} 分钟`).test(c1));
+    const t0 = Date.now();
+    await page.selectOption('#cl-level', 'C1');
+    const nC1 = CL.filter((c) => c.refLevel === 'C1').length;
+    check('G2: filter by reference level', (await page.locator('.classic-card').count()) === nC1 && (await page.locator('.classic-card .lv-C1').count()) === nC1, `${nC1}`);
+    await page.selectOption('#cl-author', 'austen');
+    const nAC = CL.filter((c) => c.refLevel === 'C1' && c.authorId === 'austen').length;
+    check('G2: level + author filters combine instantly', (await page.locator('.classic-card').count()) === nAC && Date.now() - t0 < 1500, `${nAC}`);
+    await page.selectOption('#cl-level', '');
+    check('G2: author filter alone', (await page.locator('.classic-card').count()) === CL.filter((c) => c.authorId === 'austen').length);
+    await page.selectOption('#cl-author', '');
+    await page.fill('#cl-q', 'dracula');
+    check('G2: search by work title', (await page.locator('.classic-card').count()) === 1 && (await page.locator('.classic-card[data-id="cl-028"]').count()) === 1);
+    await page.fill('#cl-q', 'box hill');
+    check('G2: search by scene', (await page.locator('.classic-card').count()) === 1 && (await page.locator('.classic-card[data-id="cl-004"]').count()) === 1);
+    await page.fill('#cl-q', 'zzzz');
+    check('G2: empty state with clear-filter button', (await page.locator('.classic-card').count()) === 0 && (await page.locator('#cl-clear').count()) === 1);
+    await page.click('#cl-clear');
+    check('G2: clear filters restores all 30', (await page.locator('.classic-card').count()) === 30 && (await page.inputValue('#cl-q')) === '');
+    check('G2: no continue card before reading anything', (await page.locator('.continue-card').count()) === 0);
+
+    // G3: reader blocks in PRD order, tap-to-lookup in every block
+    await page.click('.classic-card[data-id="cl-001"]');
+    await page.waitForSelector('.cl-excerpt-body .w');
+    const order = await page.locator('.classic-reader .cl-h').allTextContents();
+    check('G3: blocks in order Background → The Excerpt → Notes → Appreciation → Sentences to imitate', order.join('|') === 'Background|The Excerpt|Notes · 本篇注释|Appreciation|Sentences to imitate', order.join('|'));
+    const head = await page.locator('.classic-head').innerText();
+    check('G3: header shows work / author / chapter-scene / ref level / source', /Pride and Prejudice/.test(head) && /Jane Austen/.test(head) && /Chapter 1/.test(head) && /参考 B2/.test(head) && /Project Gutenberg #1342/.test(head), head.replace(/\n/g, '|'));
+    const nModels = await page.locator('.cl-model').count();
+    check('G3: 3–5 sentences to imitate, each with a note', nModels >= 3 && nModels <= 5 && (await page.locator('.cl-model .cl-model-note').count()) === nModels);
+    let okBlocks = 0;
+    for (const sel of ['.cl-background', '.cl-excerpt', '.cl-appreciation', '.cl-imitate']) {
+      await page.locator(`${sel} .w`).nth(3).click();
+      try { await page.waitForSelector('.card', { timeout: 3000 }); okBlocks += (await page.locator('.card .card-title').count()) === 1 ? 1 : 0; } catch {}
+      await page.keyboard.press('Escape');
+    }
+    check('G3: tap-to-lookup works in Background, Excerpt, Appreciation and model sentences', okBlocks === 4, `${okBlocks}/4`);
+    await clw(page, 'acknowledged').click();
+    await page.waitForSelector('.card');
+    check('G3: excerpt lookup uses the dictionary (acknowledged ← acknowledge)', /^acknowledged ← acknowledge/.test(await cardTitle(page)), await cardTitle(page));
+    await page.keyboard.press('Escape');
+
+    // G4: glosses marked in the text, shown first in the popup, listed in 本篇注释
+    const g001 = clOf('cl-001').glossary;
+    const glForms = await page.locator('.cl-excerpt-body .w.gl').evaluateAll((els) => [...new Set(els.map((e) => e.dataset.g))]);
+    check('G4: every note of the excerpt is marked in the text', g001.every((g) => glForms.includes(g.form)), `${glForms.length} marked, ${g001.length} notes`);
+    check('G4: marked words have a dotted underline', (await page.locator('.cl-excerpt-body .w.gl').first().evaluate((e) => getComputedStyle(e).textDecorationStyle)) === 'dotted');
+    const gl = g001[0];
+    await page.locator(`.cl-excerpt-body .w.gl[data-g="${gl.form}"]`).first().click();
+    await page.waitForSelector('.card .card-gloss');
+    const firstSec = await page.locator('.card').evaluate((c) => { const kids = [...c.children].filter((k) => !k.matches('.card-handle, .card-head')); return kids[0]?.className; });
+    const glTxt = await page.locator('.card .card-gloss').innerText();
+    check('G4: note shown at the top of the popup (English note + 中文), dictionary below', firstSec === 'card-gloss' && glTxt.includes(gl.note) && glTxt.includes(gl.zh) && (await page.locator('.card .card-defs, .card .card-missing').count()) >= 1, `${firstSec} | ${glTxt.replace(/\n/g, '|')}`);
+    await page.keyboard.press('Escape');
+    check('G4: commentary words are never marked as glossed', (await page.locator('.cl-background .w.gl, .cl-appreciation .w.gl, .cl-model-note .w.gl').count()) === 0);
+    check('G4 (desktop): 本篇注释 list visible with every note', await page.locator('.cl-notes').isVisible() && (await page.locator('.cl-notes dt').count()) === g001.length + clOf('cl-001').archaismsUsed.length);
+    check('G4 (desktop): notes drawer button hidden', !(await page.locator('.notes-fab').isVisible()));
+    // archaism from the shared list (cl-006: "yonder") and a dialect note forcing the headword (cl-015: warn't → be)
+    await page.goto(url + '#/classics/cl-006');
+    await page.waitForSelector('.cl-excerpt-body .w.gl[data-g="yonder"]');
+    await page.locator('.cl-excerpt-body .w.gl[data-g="yonder"]').first().click();
+    await page.waitForSelector('.card .card-gloss');
+    check('G4: archaic word gloss (yonder) from the shared archaism list', (await page.locator('.card .card-gloss').innerText()).includes(ARCH.yonder.note));
+    check('G4: archaism listed in 本篇注释', (await page.locator('.cl-notes dt', { hasText: /^yonder$/ }).count()) === 1);
+    await page.keyboard.press('Escape');
+    await page.goto(url + '#/classics/cl-015');
+    await page.waitForSelector('.cl-excerpt-body .w.gl');
+    await page.locator('.cl-excerpt-body .w.gl[data-g="warn\'t"]').first().click();
+    await page.waitForSelector('.card .card-gloss');
+    check("G4: dialect form shows note + the headword it stands for (warn't ← be)", /^warn’t ← be/.test(await cardTitle(page)) && (await page.locator('.card .card-defs').count()) === 1, await cardTitle(page));
+    await page.keyboard.press('Escape');
+    await page.goto(url + '#/classics/cl-010');
+    await page.waitForSelector('.cl-excerpt-body .w');
+    check("G4: leading-elision archaism is one token ('em)", (await page.locator('.cl-excerpt-body .w.gl[data-g="\'em"]', { hasText: /^’em$/ }).count()) >= 1);
+    await page.locator('.cl-notes .note-jump').first().click();
+    check('G4: tapping a note jumps to the word in the text', (await page.locator('.cl-excerpt-body .w.flash').count()) === 1);
+
+    // G5: source required, credited on each page and on About
+    check('G5: every excerpt has a Project Gutenberg edition, URL, year and PD note', CL.every((c) => /^Project Gutenberg #\d+/.test(c.source.edition) && /^https:\/\/www\.gutenberg\.org\/ebooks\/\d+$/.test(c.source.url) && c.source.year <= 1930 && c.source.pdNote.length > 10));
+    const attrib = await page.locator('.cl-attrib').innerText();
+    check('G5: classic page credits Project Gutenberg + public domain', /Project Gutenberg/.test(attrib) && /public domain/.test(attrib) && (await page.locator('.cl-attrib a[href^="https://www.gutenberg.org/ebooks/"]').count()) === 1);
+    check('G5: excerpt text has no Gutenberg boilerplate', !/Project Gutenberg|\*\*\*/.test(await page.locator('.cl-excerpt-body').innerText()));
+    await page.goto(url + '#/about');
+    await page.waitForSelector('.about');
+    const ab = await page.locator('.about').innerText();
+    check('G5: About page credits Project Gutenberg (and keeps Octanove / CEFR-J / ECDICT)', /名著赏析/.test(ab) && /Project Gutenberg/.test(ab) && /公有领域/.test(ab) && /Octanove/.test(ab) && /CC BY-SA 4\.0/.test(ab) && /CEFR-J/.test(ab) && /ECDICT/.test(ab) && (await page.locator('.about a[href="https://www.gutenberg.org/"]').count()) === 1);
+
+    // G6: commentary in English, around B2
+    const all = CL.map((c) => clOf(c.id));
+    check('G6: Background and Appreciation are English only (no Chinese)', all.every((c) => !/[\u4e00-\u9fff]/.test([...c.intro, ...c.appreciation, ...c.modelSentences.map((m) => m.note)].join(' '))));
+    const lowB2 = all.filter((c) => c.meta.stats.commentaryB2 < 0.85).map((c) => c.id);
+    check('G6: commentary ≥ 85% of words at B2 or below in every excerpt (target 90%, report-only)', lowB2.length === 0, lowB2.join());
+    check('no console / HTTP errors in classics pages', page.errors.length === 0, page.errors.join('; '));
+    await page.context().close();
+
+    // G7: progress, scroll and vocab context share the article storage; context jumps back
+    page = await newPage();
+    await page.goto(url + '#/classics/cl-001');
+    await page.waitForSelector('.cl-excerpt-body .w');
+    await clw(page, 'acknowledged').click();
+    await page.waitForSelector('.card');
+    await page.keyboard.press('Escape');
+    const st = await page.evaluate(() => ({ v: JSON.parse(localStorage.getItem('ra:v1:vocab') || '{}'), p: JSON.parse(localStorage.getItem('ra:v1:progress') || '{}') }));
+    const ctx = st.v.acknowledge?.ctx?.[0];
+    check('G7: vocab saved in ra:v1:vocab with classic context (a = cl-001)', ctx && ctx.a === 'cl-001' && /acknowledged/.test(ctx.s), JSON.stringify(ctx));
+    check('G7: progress saved in ra:v1:progress under cl-001', st.p['cl-001']?.status === 'reading');
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight * 0.45));
+    await page.waitForTimeout(2300);
+    await page.evaluate(() => window.scrollBy(0, 1));
+    await page.waitForTimeout(2300);
+    await page.goto(url + '#/words');
+    await page.waitForSelector('.vocab-row');
+    await page.locator('.vocab-row[data-word="acknowledge"] .linkbtn').first().click();
+    const ctxHref = await page.locator('.vocab-row[data-word="acknowledge"] a.ctx').first().getAttribute('href');
+    check('G7: vocab context links to #/classics/cl-001?p=&s=', /^#\/classics\/cl-001\?p=\d+&s=/.test(ctxHref), ctxHref);
+    await page.locator('.vocab-row[data-word="acknowledge"] a.ctx').first().click();
+    await page.waitForSelector('.cl-excerpt-body .w.flash');
+    check('G7: context jump highlights the sentence in the classic', (await page.locator('.w.flash').count()) > 3);
+    await page.goto(url + '#/classics');
+    await page.waitForSelector('.classic-card');
+    await page.goto(url + '#/classics/cl-002');
+    await page.waitForSelector('.cl-excerpt-body .w');
+    await page.goto(url + '#/classics/cl-001');
+    await page.waitForSelector('.cl-excerpt-body .w');
+    await page.waitForTimeout(300);
+    check('G7: scroll position restored when reopening the classic', (await page.evaluate(() => window.scrollY)) > 300, String(await page.evaluate(() => window.scrollY)));
+    await page.click('#cl-status');
+    check('G7: mark as read is stored like articles', await page.evaluate(() => JSON.parse(localStorage.getItem('ra:v1:progress'))['cl-001'].status === 'read'));
+    await page.click('#cl-status');
+
+    // G8: prev / next inside the filtered list; 继续阅读 can point at a classic
+    await page.goto(url + '#/classics/cl-001');
+    await page.waitForSelector('.cl-excerpt-body .w');
+    check('G8: first classic: prev disabled, next = cl-002', (await page.locator('.article-nav .btn.disabled', { hasText: '上一篇' }).count()) === 1 && (await page.locator('.article-nav a[rel="next"]').getAttribute('href')) === '#/classics/cl-002');
+    await page.goto(url + '#/classics/cl-030');
+    await page.waitForSelector('.cl-excerpt-body .w');
+    check('G8: last classic: next disabled', (await page.locator('.article-nav .btn.disabled', { hasText: '下一篇' }).count()) === 1);
+    await page.goto(url + '#/classics');
+    await page.waitForSelector('.classic-card');
+    await page.selectOption('#cl-author', 'dickens');
+    const dk = CL.filter((c) => c.authorId === 'dickens').map((c) => c.id);
+    await page.click(`.classic-card[data-id="${dk[0]}"]`);
+    await page.waitForSelector('.cl-excerpt-body .w');
+    check('G8: prev/next stay inside the filtered list (author = Dickens)', (await page.locator('.article-nav a[rel="next"]').getAttribute('href')) === `#/classics/${dk[1]}` && (await page.locator('.article-nav .btn.disabled', { hasText: '上一篇' }).count()) === 1);
+    await page.goto(url + `#/classics/${dk[dk.length - 1]}`);
+    await page.waitForSelector('.cl-excerpt-body .w');
+    check('G8: end of the filtered list greys out next', (await page.locator('.article-nav .btn.disabled', { hasText: '下一篇' }).count()) === 1 && (await page.locator('.article-nav a[rel="prev"]').getAttribute('href')) === `#/classics/${dk[dk.length - 2]}`);
+    await page.goto(url);
+    await page.waitForSelector('.card-item');
+    check('G8: 继续阅读 on the home page points at the classic being read', (await page.locator('.continue-card').getAttribute('href'))?.startsWith('#/classics/cl-'), await page.locator('.continue-card').getAttribute('href'));
+    await page.goto(url + '#/classics');
+    await page.waitForSelector('.classic-card');
+    check('G8: classics page shows 继续阅读 for the classic', (await page.locator('.continue-card').getAttribute('href'))?.startsWith('#/classics/cl-'));
+
+    // G9: distribution (reference only)
+    await page.goto(url + '#/classics/cl-001');
+    await page.waitForSelector('.cl-excerpt-body .w');
+    await page.click('.cl-dist summary');
+    check('G9: vocabulary distribution shown (≤B1 / ≤B2 / ≤C1, reference only)', (await page.locator('.cl-dist .dist-bars li').count()) === 3 && /仅供参考/.test(await page.locator('.cl-dist').innerText()));
+    check('no console / HTTP errors (G7–G9)', page.errors.length === 0, page.errors.join('; '));
+    await page.context().close();
+
+    // mobile: notes in a bottom drawer, popup is a sheet, nothing overflows
+    page = await newPage({ viewport: { width: 375, height: 667 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
+    const noH = async () => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
+    await page.goto(url + '#/classics');
+    await page.waitForSelector('.classic-card');
+    check('mobile: classics list has no horizontal scroll, nav fits', await noH());
+    const small = await page.evaluate(() => [...document.querySelectorAll('.navlinks a')].filter((a) => a.getBoundingClientRect().height < 44).length);
+    check('mobile: nav links (incl. 名著) ≥ 44px', small === 0);
+    await page.goto(url + '#/classics/cl-015');
+    await page.waitForSelector('.cl-excerpt-body .w');
+    check('mobile: reader no horizontal scroll', await noH());
+    check('G4 (mobile): inline notes hidden, notes button shown', !(await page.locator('.cl-notes').isVisible()) && (await page.locator('.notes-fab').isVisible()));
+    await page.locator('.notes-fab').tap();
+    const db = await page.locator('.notes-drawer').boundingBox();
+    check('G4 (mobile): notes open in a bottom drawer', await page.locator('.notes-drawer').isVisible() && Math.abs(db.y + db.height - 667) < 3 && (await page.locator('.notes-drawer dt').count()) > 0, JSON.stringify(db));
+    await page.locator('.notes-drawer .nd-head .iconbtn').tap();
+    check('G4 (mobile): drawer closes', !(await page.locator('.notes-drawer').isVisible()));
+    await page.locator('.cl-excerpt-body .w.gl').first().tap();
+    await page.waitForSelector('.card.sheet .card-gloss');
+    check('mobile: gloss popup is a bottom sheet with the note first', (await page.locator('.card.sheet .card-gloss').count()) === 1);
+    check('no console / HTTP errors (mobile classics)', page.errors.length === 0, page.errors.join('; '));
+    await page.context().close();
+  }
+
   section('Offline (service worker), root and sub-path');
   for (const [label, base] of [['root', url], ['sub-path /sub/english-reader/', sub.url]]) {
     page = await newPage();
@@ -666,6 +888,15 @@ try {
     await page.goto(base + '#/words');
     await page.waitForSelector('h1');
     check(`${label}: offline vocab page works`, /生词本/.test(await page.locator('h1').innerText()));
+    await page.goto(base + '#/classics');
+    await page.waitForSelector('.classic-card');
+    check(`${label}: offline classics list (名著) works`, (await page.locator('.classic-card').count()) === 30);
+    await page.click('.classic-card[data-id="cl-030"]');
+    await page.waitForSelector('.cl-excerpt-body .w.gl');
+    await page.locator('.cl-excerpt-body .w.gl[data-g="yonder"]').first().click();
+    await page.waitForSelector('.card .card-gloss');
+    check(`${label}: offline classic page + gloss popup + dictionary work`, (await page.locator('.card .card-defs').count()) === 1);
+    await page.keyboard.press('Escape');
     await page.goto(base + '#/settings');
     await page.waitForSelector('#offline');
     await page.waitForFunction(() => /已缓存/.test(document.querySelector('#offline').textContent), null, { timeout: 5000 });

@@ -6,10 +6,10 @@
 //   formSelfFirst  every word in this list is its own lemma too (lemma folded as `alt`, CEFR falls back to the lemma's)
 //   hyphen           hyphenated words: whole ECDICT headword stays whole, otherwise the card lists the parts in order
 //   verbalIng        -ing words that must keep resolving to the verb (running -> run, going -> go, ...)
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { ROOT, applyCefrOverrides, ensureEcdict, hasOwnMeaning, lexAlt, loadCefr, loadDb, loadOverrides, makeEntry, resolveForBuild } from './lib/ecdict.ts';
-import { resolveToken, tokenize, viewOf } from '../src/shared/text.ts';
+import { glossKey, resolveToken, resolveWithGloss, tokenize, viewOf } from '../src/shared/text.ts';
 
 const cfg = JSON.parse(readFileSync(resolve(ROOT, 'tests/lemma-cases.json'), 'utf8'));
 const ov = loadOverrides();
@@ -118,13 +118,52 @@ for (const [w, pos, zh] of cfg.cefr.leadDefs as [string, string, string][]) {
   const e = row ? makeEntry(row, cefrAll, w, ov) : null;
   if (!e || e.d[0]?.pos !== pos || !e.d[0].zh.includes(zh) || e.d.length < 2) { fail++; console.log(`  ✗ [leadDef] ${w}: first def ${JSON.stringify(e?.d[0])}`); }
 }
+// ---- classics: archaisms / dialect notes resolve over main dictionary + classics-only dictionary (needs npm run data)
+let classicN = 0;
+{
+  const pub = resolve(ROOT, 'public/data');
+  const mainForms = JSON.parse(readFileSync(resolve(pub, 'dict/forms.json'), 'utf8'));
+  const mainEntries = Object.assign({}, ...['b1', 'b2', 'c1'].map((l) => JSON.parse(readFileSync(resolve(pub, `dict/entries-${l}.json`), 'utf8'))));
+  const cd = JSON.parse(readFileSync(resolve(pub, 'classics/dict.json'), 'utf8'));
+  const arch = JSON.parse(readFileSync(resolve(ROOT, 'content/classics/archaisms.json'), 'utf8'));
+  const cview = viewOf({ ...mainForms, ...cd.forms }, { ...mainEntries, ...cd.entries });
+  // same rules as the browser, over the full ECDICT build resolver (the shipped classics dict only holds words the excerpts use)
+  const res = (w: string, g: { lemma?: string; dict?: string } | null) => resolveWithGloss(w, g, (x) => resolveForBuild(x, db, ov));
+  // and the runtime view must agree for every word the excerpts actually use
+  const used = new Set<string>();
+  for (const f of readdirSync(resolve(pub, 'classics')).filter((x) => /^cl-\d{3}\.json$/.test(x))) {
+    const c = JSON.parse(readFileSync(resolve(pub, 'classics', f), 'utf8'));
+    for (const p of c.paragraphs) for (const t of tokenize(p)) used.add(glossKey(t.text));
+  }
+  for (const [w, head, want] of cfg.classics.cases as [string, string | null, string][]) {
+    n++; classicN++;
+    const g = arch[glossKey(w)] ?? (head ? { dict: head } : null);
+    const got = res(w, g)?.lemma;
+    if (got !== want) { fail++; console.log(`  ✗ [classics] ${w}: expected ${want}, got ${got}`); }
+  }
+  for (const [k, g] of Object.entries(arch) as [string, { lemma: string; note: string; zh: string; dict?: string }][]) {
+    n++; classicN++;
+    // covered = a dictionary entry or (for 'tis-type forms ECDICT lacks) its own note
+    if (!res(k, g) && !(g.note && g.zh)) { fail++; console.log(`  ✗ [classics archaism] "${k}" has neither a dictionary entry nor a note`); }
+    if (g.dict && !res(k, g)) { fail++; console.log(`  ✗ [classics archaism] "${k}" points at "${g.dict}", which has no entry`); }
+    if (used.has(k)) {
+      const rt = resolveWithGloss(k, g, (x) => resolveToken(x, cview));
+      const bt = res(k, g);
+      if (bt && rt?.lemma !== bt.lemma) { fail++; console.log(`  ✗ [classics archaism] "${k}": runtime ${rt?.lemma} vs build ${bt.lemma}`); }
+    }
+  }
+  // isolation: the classics dictionary only adds what the article shards lack
+  n++; classicN++;
+  const leak = Object.keys(cd.entries).filter((k) => Object.prototype.hasOwnProperty.call(mainEntries, k)).concat(Object.keys(cd.forms).filter((k) => Object.prototype.hasOwnProperty.call(mainForms, k)));
+  if (leak.length) { fail++; console.log(`  ✗ [classics] dict.json repeats main dictionary keys: ${leak.slice(0, 5).join(', ')}`); }
+}
 let ownEntries = 0;
 for (const [form, lemma] of amb) {
   const row = db.rows.get(form);
   if (form !== lemma && row && hasOwnMeaning(row)) ownEntries++;
 }
 const total = basic.length;
-console.log(`lemma cases: ${n - fail}/${n} passed (basic ${total}, ambiguous ${amb.length}, lexicalized -ing ${ov.lexicalizedIng.size}, adjectival participles ${ov.lexicalizedAdj.size}, form-self-first ${ov.formSelfFirst.size}, ${lexExpect.length} alt checks, verbal -ing ${verbal.length}, hyphen ${hyphen.length}x2, tokenizer ${tokCases.length}, cefr ${cfg.cefr.manual.length + cfg.cefr.fallback.length + cfg.cefr.leadDefs.length}); ambiguous words with own collapsible entry: ${ownEntries}`);
+console.log(`lemma cases: ${n - fail}/${n} passed (basic ${total}, ambiguous ${amb.length}, lexicalized -ing ${ov.lexicalizedIng.size}, adjectival participles ${ov.lexicalizedAdj.size}, form-self-first ${ov.formSelfFirst.size}, ${lexExpect.length} alt checks, verbal -ing ${verbal.length}, hyphen ${hyphen.length}x2, tokenizer ${tokCases.length}, classics ${classicN}, cefr ${cfg.cefr.manual.length + cfg.cefr.fallback.length + cfg.cefr.leadDefs.length}); ambiguous words with own collapsible entry: ${ownEntries}`);
 if (total < 200) {
   console.log(`  ✗ need >= 200 basic cases, have ${total}`);
   fail++;
