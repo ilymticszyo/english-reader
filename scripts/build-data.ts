@@ -7,6 +7,7 @@
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { loadSourceArticles } from './lib/articles.ts';
+import { buildClassics } from './lib/classics.ts';
 import { ROOT, ensureEcdict, hasOwnMeaning, lexAlt, loadCefr, loadDb, loadOverrides, applyCefrOverrides, makeEntry, parseExchange, rawLemmas, resolveForBuild } from './lib/ecdict.ts';
 import type { BuildRes } from './lib/ecdict.ts';
 import { resolveToken, splitSentences, tokenize, viewOf } from '../src/shared/text.ts';
@@ -228,6 +229,10 @@ for (const a of articles) {
   if (a.meta.stats.coverageAtLevel < need) flags.push(`${a.id}: vocabulary coverage ${(a.meta.stats.coverageAtLevel * 100).toFixed(1)}% < ${(need * 100).toFixed(0)}% (${a.level}); off-level: ${[...off.keys()].slice(0, 10).join(', ')}`);
 }
 
+// ---------- classics (名著赏析): separate pool, never coverage-gated; only missing sources / definitions fail ----------
+const classicFlags: string[] = [];
+const cl = buildClassics({ db, ov, cefr, mainForms: formsOut, mainEntries: allEntries, err, flag: (m) => classicFlags.push(m), articleIds: seenIds });
+
 if (errors.length) {
   console.error('\n[data] BUILD FAILED:');
   for (const e of [...new Set(errors)]) console.error('  ✗ ' + e);
@@ -290,6 +295,7 @@ md += `## Calibration flags (manual review)\n\n${flags.length ? flags.map((f) =>
 md += `## Per-article stats\n\n| article | words | avg sentence | coverage | off-level (top) |\n|---|---|---|---|---|\n`;
 for (const a of [...articles].sort((x, y) => x.id.localeCompare(y.id))) md += `| ${a.id} | ${a.wordCount} | ${a.meta.stats.avgSentenceLen} | ${(a.meta.stats.coverageAtLevel * 100).toFixed(1)}% | ${a.meta.stats.offLevelWords.slice(0, 6).join(', ')} |\n`;
 md += `\n## Missed or suspicious lemmas\n\nFix by editing \`content/lemma-overrides.json\` (the only place for manual fixes), then rebuild.\n`;
+md += cl.report + `\n### Classics review flags (reference only, never fail the build)\n\n${classicFlags.length ? classicFlags.map((f) => `- ${f}`).join('\n') : '_none_'}\n`;
 for (const [k, list] of byKind) {
   md += `\n### ${k} (${list.length})\n\n${KIND_HELP[k] ?? ''}\n\n`;
   for (const f of list.slice(0, k === 'no-cefr' ? 400 : 200)) md += `- **${f.word}** — ${f.detail} _[${f.articles.join(', ')}]_${f.fix ? `\n  - fix: \`${f.fix}\`` : ''}\n`;
@@ -298,6 +304,7 @@ const out = resolve(ROOT, 'public/data');
 rmSync(out, { recursive: true, force: true });
 mkdirSync(resolve(out, 'articles'), { recursive: true });
 mkdirSync(resolve(out, 'dict'), { recursive: true });
+mkdirSync(resolve(out, 'classics'), { recursive: true });
 const sorted = [...articles].sort((a, b) => LEVEL_RANK[a.level] - LEVEL_RANK[b.level] || a.id.localeCompare(b.id));
 const index: ArticleIndex = {
   schema: 1,
@@ -310,13 +317,19 @@ write('index.json', index);
 for (const a of sorted) write(`articles/${a.id}.json`, a);
 write('dict/forms.json', formsOut);
 for (const lv of LEVELS) write(`dict/entries-${lv.toLowerCase()}.json`, shards[lv]);
+write('classics/index.json', cl.index);
+for (const c of cl.classics) write(`classics/${c.id}.json`, c);
+write('classics/archaisms.json', cl.archaisms);
+write('classics/dict.json', cl.dict);
 
 mkdirSync(resolve(ROOT, 'reports'), { recursive: true });
 writeFileSync(resolve(ROOT, 'reports/build-report.md'), md);
-writeFileSync(resolve(ROOT, 'reports/build-report.json'), JSON.stringify({ flags, findings, articles: sorted.map((a) => ({ id: a.id, level: a.level, words: a.wordCount, ...a.meta.stats, offLevelAll: offAll.get(a.id) ?? [] })) }, null, 2));
+writeFileSync(resolve(ROOT, 'reports/build-report.json'), JSON.stringify({ flags, classicFlags, classics: cl.classics.map((c) => ({ id: c.id, work: c.work, refLevel: c.refLevel, words: c.wordCount, totalWords: c.totalWords, ...c.meta.stats })), findings, articles: sorted.map((a) => ({ id: a.id, level: a.level, words: a.wordCount, ...a.meta.stats, offLevelAll: offAll.get(a.id) ?? [] })) }, null, 2));
 const size = (p: string) => readFileSync(resolve(out, p)).length;
 console.log(`[data] ${articles.length} articles; forms=${Object.keys(formsOut).length}; entries B1/B2/C1 = ${LEVELS.map((l) => Object.keys(shards[l]).length).join('/')}`);
 console.log(`[data] shard bytes: forms=${size('dict/forms.json')} ${LEVELS.map((l) => `${l}=${size(`dict/entries-${l.toLowerCase()}.json`)}`).join(' ')}`);
 for (const a of sorted) console.log(`  ${a.id} words=${a.wordCount} sentLen=${a.meta.stats.avgSentenceLen} coverage=${a.meta.stats.coverageAtLevel}`);
 console.log(`[data] report → reports/build-report.md: ${[...byKind].filter(([k]) => k !== 'no-cefr').map(([k, v]) => `${k}=${v.length}`).join(' ') || 'no findings'}; no-cefr=${byKind.get('no-cefr')?.length ?? 0}; calibration flags=${flags.length}`);
 for (const f of flags) console.log('  ⚑ ' + f);
+console.log(`[data] classics: ${cl.classics.length} excerpts; extra dictionary forms=${Object.keys(cl.dict.forms).length} entries=${Object.keys(cl.dict.entries).length}; archaisms=${Object.keys(cl.archaisms).length}; review flags=${classicFlags.length}`);
+for (const f of classicFlags) console.log('  ⚑ classics ' + f);

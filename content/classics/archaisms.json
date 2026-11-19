@@ -1,0 +1,219 @@
+{
+ "thee": {
+  "lemma": "you",
+  "note": "Old or literary object form of 'you' (one person), as in 'I thank thee'.",
+  "zh": "你（古体宾格）"
+ },
+ "thou": {
+  "lemma": "you",
+  "note": "Old or literary subject form of 'you' (one person), as in 'thou art'.",
+  "zh": "你（古体主格）"
+ },
+ "thy": {
+  "lemma": "your",
+  "note": "Old or literary form of 'your' (one person), used before a consonant.",
+  "zh": "你的（古体）"
+ },
+ "thine": {
+  "lemma": "yours",
+  "note": "Old form of 'yours', or of 'your' before a vowel sound (thine eyes).",
+  "zh": "你的（古体）"
+ },
+ "thyself": {
+  "lemma": "yourself",
+  "note": "Old or literary form of 'yourself'.",
+  "zh": "你自己（古体）"
+ },
+ "ye": {
+  "lemma": "you",
+  "note": "Old form of 'you' when speaking to more than one person.",
+  "zh": "你们（古体）"
+ },
+ "hath": {
+  "lemma": "has",
+  "note": "Old form of 'has'.",
+  "zh": "有（has 的古体）"
+ },
+ "doth": {
+  "lemma": "does",
+  "note": "Old form of 'does'.",
+  "zh": "do 的第三人称单数古体"
+ },
+ "dost": {
+  "lemma": "do",
+  "note": "Old form of 'do', used with 'thou'.",
+  "zh": "do 的古体（与 thou 连用）"
+ },
+ "hast": {
+  "lemma": "have",
+  "note": "Old form of 'have', used with 'thou'.",
+  "zh": "have 的古体（与 thou 连用）"
+ },
+ "shalt": {
+  "lemma": "shall",
+  "note": "Old form of 'shall', used with 'thou'.",
+  "zh": "shall 的古体（与 thou 连用）"
+ },
+ "wilt": {
+  "lemma": "will",
+  "note": "Old form of 'will', used with 'thou'.",
+  "zh": "will 的古体（与 thou 连用）"
+ },
+ "ere": {
+  "lemma": "before",
+  "note": "Old or literary word for 'before'.",
+  "zh": "在……之前（古/文）"
+ },
+ "fain": {
+  "lemma": "gladly",
+  "note": "Old word: 'would fain' means 'would gladly, would like to'.",
+  "zh": "乐意地（古）"
+ },
+ "nay": {
+  "lemma": "no",
+  "note": "Old word for 'no'; also 'and even more than that'.",
+  "zh": "不；甚至（古）"
+ },
+ "whilst": {
+  "lemma": "while",
+  "note": "Older or British form of 'while'.",
+  "zh": "当……的时候；然而"
+ },
+ "'tis": {
+  "lemma": "it is",
+  "note": "Short old form of 'it is'.",
+  "zh": "= it is（古体缩写）"
+ },
+ "'twas": {
+  "lemma": "it was",
+  "note": "Short old form of 'it was'.",
+  "zh": "= it was（古体缩写）"
+ },
+ "'twere": {
+  "lemma": "it were",
+  "note": "Short old form of 'it were' (= it would be).",
+  "zh": "= it were（古体缩写）"
+ },
+ "'twill": {
+  "lemma": "it will",
+  "note": "Short old form of 'it will'.",
+  "zh": "= it will（古体缩写）"
+ },
+ "'twould": {
+  "lemma": "it would",
+  "note": "Short old form of 'it would'.",
+  "zh": "= it would（古体缩写）"
+ },
+ "'em": {
+  "lemma": "them",
+  "dict": "them",
+  "note": "Spoken short form of 'them'.",
+  "zh": "= them（口语缩写）"
+ },
+ "o'er": {
+  "lemma": "over",
+  "dict": "over",
+  "note": "Poetic short form of 'over'.",
+  "zh": "= over（诗体缩写）"
+ },
+ "ne'er": {
+  "lemma": "never",
+  "dict": "never",
+  "note": "Poetic short form of 'never'.",
+  "zh": "= never（诗体缩写）"
+ },
+ "e'er": {
+  "lemma": "ever",
+  "dict": "ever",
+  "note": "Poetic short form of 'ever'.",
+  "zh": "= ever（诗体缩写）"
+ },
+ "e'en": {
+  "lemma": "even",
+  "dict": "even",
+  "note": "Poetic short form of 'even'.",
+  "zh": "= even（诗体缩写）"
+ },
+ "oft": {
+  "lemma": "often",
+  "note": "Old or poetic word for 'often'.",
+  "zh": "常常（古/诗）"
+ },
+ "hither": {
+  "lemma": "here",
+  "note": "Old word: to this place, here.",
+  "zh": "到这里（古）"
+ },
+ "thither": {
+  "lemma": "there",
+  "note": "Old word: to that place, there.",
+  "zh": "到那里（古）"
+ },
+ "whither": {
+  "lemma": "where",
+  "note": "Old word: to what place, where.",
+  "zh": "去哪里（古）"
+ },
+ "whence": {
+  "lemma": "from where",
+  "note": "Old word: from where, from which place.",
+  "zh": "从哪里（古）"
+ },
+ "wherefore": {
+  "lemma": "why",
+  "note": "Old word for 'why' (not 'where').",
+  "zh": "为什么（古）"
+ },
+ "yonder": {
+  "lemma": "over there",
+  "note": "Old or regional word: over there, that one far away.",
+  "zh": "那边的（古/方言）"
+ },
+ "aught": {
+  "lemma": "anything",
+  "note": "Old word for 'anything'.",
+  "zh": "任何事物（古）"
+ },
+ "naught": {
+  "lemma": "nothing",
+  "note": "Old word for 'nothing'.",
+  "zh": "无；零（古）"
+ },
+ "betwixt": {
+  "lemma": "between",
+  "note": "Old word for 'between'.",
+  "zh": "在……之间（古）"
+ },
+ "perchance": {
+  "lemma": "perhaps",
+  "note": "Old word for 'perhaps' or 'by chance'.",
+  "zh": "或许（古）"
+ },
+ "anon": {
+  "lemma": "soon",
+  "note": "Old word for 'soon' or 'in a short time'.",
+  "zh": "不久（古）"
+ },
+ "methinks": {
+  "lemma": "I think",
+  "note": "Old phrase meaning 'I think' or 'it seems to me'.",
+  "zh": "我认为（古）"
+ },
+ "alack": {
+  "lemma": "alas",
+  "note": "Old cry of sorrow, like 'alas'.",
+  "zh": "唉（古）"
+ },
+ "shew": {
+  "lemma": "show",
+  "dict": "show",
+  "note": "Old spelling of 'show'.",
+  "zh": "= show（旧拼法）"
+ },
+ "shewed": {
+  "lemma": "showed",
+  "dict": "show",
+  "note": "Old spelling of 'showed'.",
+  "zh": "= showed（旧拼法）"
+ }
+}

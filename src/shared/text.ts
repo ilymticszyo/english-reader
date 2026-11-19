@@ -117,7 +117,10 @@ export interface Token {
 
 /** Decade forms (1870s, 1990s, '90s, 80s): one non-word token, so the trailing "s" is never a word. */
 const DECADE_SRC = String.raw`(?<![A-Za-z0-9])['’]?\d{2,4}s\b`;
-const TOKEN_RE = new RegExp(`${DECADE_SRC}|${WORD_RE.source}`, 'g');
+/** Leading-elision archaic forms ('tis, 'twas, 'twere, 'twill, 'twould, 'em): one token including the apostrophe.
+ *  Mid-word elisions (o'er, ne'er, e'en) are already single tokens via WORD_RE. */
+export const ELISION_SRC = String.raw`(?<![A-Za-z])['’](?:[Tt]is|[Tt]was|[Tt]were|[Tt]will|[Tt]would|em)(?![A-Za-z'’])`;
+const TOKEN_RE = new RegExp(`${DECADE_SRC}|${ELISION_SRC}|${WORD_RE.source}`, 'g');
 const STARTS_WITH_DECADE = /^['’]?\d/;
 
 export function tokenize(text: string): Token[] {
@@ -152,6 +155,23 @@ export function splitSentences(text: string): { text: string; start: number; end
     }
   }
   return out;
+}
+
+/** Normalised key for glossary / archaism lookups: curly apostrophe -> straight, lower case. */
+export const glossKey = (token: string) => token.replace(/[’‘]/g, "'").toLowerCase();
+
+/**
+ * Dictionary lookup for a word that may carry a classics note (shared by build and browser):
+ *  1. the note names a dictionary word ("dict") -> look that up (dialect / misleading forms: warn't -> be);
+ *  2. otherwise the form itself;
+ *  3. otherwise the note's single-word modern equivalent (thou -> you), if any.
+ */
+export function resolveWithGloss<R>(token: string, gloss: { lemma?: string; dict?: string } | null | undefined, resolve: (w: string) => R | null): R | null {
+  if (gloss?.dict) return resolve(gloss.dict);
+  const r = resolve(token);
+  if (r) return r;
+  if (gloss?.lemma && /^[a-z][a-z'-]*$/.test(gloss.lemma)) return resolve(gloss.lemma);
+  return null;
 }
 
 export const FORM_LABELS: Record<string, string> = {

@@ -26,5 +26,8 @@ const version = `${pkg.version}+${hash.digest('hex').slice(0, 8)}`;
 const precache = ['./', ...shipped.map((f) => './' + f), './version.json'];
 const tpl = readFileSync(resolve(import.meta.dirname, 'sw-template.js'), 'utf8');
 writeFileSync(join(DIST, 'sw.js'), tpl.replace('__VERSION__', version).replace('__FILES__', JSON.stringify(precache, null, 1)));
-writeFileSync(join(DIST, 'version.json'), JSON.stringify({ version, files: precache.length, builtAt: new Date().toISOString() }));
+// classics (名著赏析) ship as their own data set: list it so a deploy check can confirm they are part of this version
+const classicsData = shipped.filter((f) => f.startsWith('data/classics/'));
+const classics = classicsData.filter((f) => /\/cl-\d{3}\.json$/.test(f)).length;
+writeFileSync(join(DIST, 'version.json'), JSON.stringify({ version, files: precache.length, classics, classicsData, builtAt: new Date().toISOString() }));
 console.log(`[sw] version ${version}, precaching ${precache.length} URLs`);
