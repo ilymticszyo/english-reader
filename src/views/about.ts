@@ -14,10 +14,12 @@ export function mountAbout(root: HTMLElement): () => void {
         ' 收录的公有领域（public domain）作品，均为 1930 年以前出版、在美国已进入公有领域的版本；每篇页面都注明了所用 Project Gutenberg 电子书编号与链接。'
         + '本站只摘录作者正文，已去除 Project Gutenberg 的页眉、页脚与许可声明；各篇的英文导读（Background）、注释与赏析（Appreciation）为本站撰写。'
         + '“Project Gutenberg” 是 Project Gutenberg Literary Archive Foundation 的注册商标，本站与其无任何关联，也未获其背书。如你所在地区的版权法不同，请自行确认作品在当地的版权状态。'),
+      h('h2', null, '难度自测'),
+      h('p', null, '「自测」的认词题从 CEFR-J（A2–B2）和 Octanove（C1–C2）词表中随机抽词，释义取自 ECDICT；假词由程序拼合真实词的片段生成，并与 ECDICT 全部词条和词形核对过，确保不是真实单词。阅读题的短文节选自本站文章，题目为本站原创。结果只是粗略估计，仅供选择起步难度参考。'),
       h('h2', null, '数据来源与许可'),
       h('ul', null,
         h('li', null, h('strong', null, 'ECDICT'), '（开源英汉词典数据库，MIT 许可证）：音标、中文释义、词形变化（exchange）、考试标签、柯林斯星级。© skywind3000，',
-          link('https://github.com/skywind3000/ECDICT', 'github.com/skywind3000/ECDICT'), '。本站只使用其中被文章用到的词条子集。'),
+          link('https://github.com/skywind3000/ECDICT', 'github.com/skywind3000/ECDICT'), '。本站只使用其中被文章和难度自测用到的词条子集。'),
         h('li', null, h('strong', null, 'CEFR-J Wordlist Version 1.5'), '（词的 CEFR 等级，A1–B2）：Compiled by Yukio Tono, Tokyo University of Foreign Studies. Retrieved from ',
           link('http://www.cefr-j.org/download.html', 'cefr-j.org/download.html'), '。版权归东京外国语大学 Tono 研究室（Tono Laboratory, TUFS）所有；数据由 ',
           link('https://github.com/openlanguageprofiles/olp-en-cefrj', 'Open Language Profiles'), ' 提供。CEFR-J 词表可免费用于研究和商业目的，须注明出处；其不对数据的准确性负责。'),

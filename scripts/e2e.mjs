@@ -4,6 +4,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { serve } from './static-server.mjs';
+import { makePlan } from '../src/shared/leveltest.ts';
 
 const ROOT = resolve(import.meta.dirname, '..');
 const results = [];
@@ -48,6 +49,45 @@ const lum = (rgb) => {
   const [r, g, b] = rgb.match(/\d+(\.\d+)?/g).slice(0, 3).map(Number).map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; });
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 };
+// 难度自测: the built word banks, to answer like a learner with a given profile
+const LT = JSON.parse(readFileSync(resolve(ROOT, 'dist/data/leveltest.json'), 'utf8'));
+const LT_BAND = new Map([...Object.entries(LT.bands).flatMap(([b, ws]) => ws.map((x) => [x.w, b])), ...LT.pseudo.map((w) => [w, 'pseudo'])]);
+/** Takes the test on the current page (#lt-start must be visible). knows(band, indexInBand) → answer "认识"; read = correct answers per level. */
+async function takeTest(page, knows, read, { keys = false } = {}) {
+  await page.click('#lt-start');
+  const words = [];
+  const seen = {};
+  for (;;) {
+    const w = (await page.locator('#lt-word').innerText()).trim();
+    const band = LT_BAND.get(w);
+    seen[band] = (seen[band] ?? 0) + 1;
+    words.push(w);
+    const yes = knows(band, seen[band] - 1);
+    const n = Number((await page.locator('#lt-count').innerText()).split('/')[1]);
+    if (keys) await page.keyboard.press(yes ? 'y' : 'n');
+    else await page.click(yes ? '#lt-yes' : '#lt-no');
+    if (words.length >= n) break;
+    await page.waitForFunction((k) => document.querySelector('#lt-count')?.textContent.startsWith(k + ' /'), words.length + 1);
+  }
+  const passages = [];
+  for (let k = 0; k < 3; k++) {
+    await page.waitForSelector(`#lt-passage`);
+    await page.waitForFunction((k) => document.querySelector('h1')?.textContent.includes(`（${k + 1} / 3）`), k);
+    const id = await page.locator('#lt-passage').getAttribute('data-id');
+    const ps = LT.passages.find((x) => x.id === id);
+    passages.push(id);
+    for (let q = 0; q < 3; q++) {
+      const opts = ps.questions[q].options;
+      const right = opts[ps.questions[q].answer];
+      const pick = q < (read[ps.level] ?? 0) ? right : opts.find((o) => o !== right);
+      await page.locator(`.lt-q[data-q="${q}"] .lt-opt`).filter({ hasText: new RegExp(`^${pick.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`) }).click();
+    }
+    await page.click('#lt-next');
+  }
+  await page.waitForSelector('#lt-result');
+  return { words, passages };
+}
+
 const contrast = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05); };
 
 try {
@@ -248,7 +288,7 @@ try {
   await dl.saveAs(file);
   const backup = JSON.parse(readFileSync(file, 'utf8'));
   const vocabNow = await page.evaluate(() => JSON.parse(localStorage.getItem('ra:v1:vocab')));
-  check('export file: schema 3 + app + vocab + reading history + review (+ settings) in one JSON', backup.schema === 3 && backup.review && backup.app === 'english-reader' && backup.vocab && backup.history && backup.settings && !('progress' in backup));
+  check('export file: schema 4 + app + vocab + reading history + review + levelTest (+ settings) in one JSON', backup.schema === 4 && backup.review && Array.isArray(backup.levelTest) && backup.app === 'english-reader' && backup.vocab && backup.history && backup.settings && !('progress' in backup));
   check('export contains all vocab entries', JSON.stringify(Object.keys(backup.vocab).sort()) === JSON.stringify(Object.keys(vocabNow).sort()));
   check('download filename', /^english-reader-backup-\d{4}-\d{2}-\d{2}\.json$/.test(dl.suggestedFilename()), dl.suggestedFilename());
   // wipe then import: merging into an empty book restores identical data
@@ -412,7 +452,7 @@ try {
   const mig = await page.evaluate(() => ({ p: JSON.parse(localStorage.getItem('ra:v1:progress')), m: JSON.parse(localStorage.getItem('ra:v1:meta')), bak: localStorage.getItem('ra:v1:progress.bak-v1') }));
   check('H: migration keeps every old entry (status, scroll, updatedAt) keyed by article id', Object.entries(oldProgress).every(([id, o]) => mig.p[id] && mig.p[id].status === o.status && mig.p[id].scroll === o.scroll && mig.p[id].updatedAt === o.updatedAt) && Object.keys(mig.p).length === 4, JSON.stringify(mig.p));
   check('H: migration adds readAt to read entries only', mig.p['b1-001'].readAt === 1000 && mig.p['cl-002'].readAt === 4000 && !('readAt' in mig.p['b1-002']));
-  check('H: storage schema bumped (1 → 3), untouched old progress kept in ra:v1:progress.bak-v1', mig.m.schema === 3 && mig.m.createdAt === 1 && JSON.stringify(JSON.parse(mig.bak)) === JSON.stringify(oldProgress), JSON.stringify(mig.m));
+  check('H: storage schema bumped (1 → 4), untouched old progress kept in ra:v1:progress.bak-v1', mig.m.schema === 4 && mig.m.createdAt === 1 && JSON.stringify(JSON.parse(mig.bak)) === JSON.stringify(oldProgress), JSON.stringify(mig.m));
   await page.reload();
   await page.waitForSelector('.card-item');
   check('H: migration runs once (reload leaves data identical)', isDeepStrictEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('ra:v1:progress'))), mig.p));
@@ -468,7 +508,7 @@ try {
   const [dlH] = await Promise.all([page.waitForEvent('download'), page.click('#export-btn')]);
   await dlH.saveAs('/tmp/er-history.json');
   const exH = JSON.parse(readFileSync('/tmp/er-history.json', 'utf8'));
-  check('H: export = one JSON with schema 3, reading history (with readAt) and vocab book', exH.schema === 3 && exH.app === 'english-reader' && exH.history['b1-001'].readAt === 1000 && exH.history['b1-003'].status === 'read' && exH.history['cl-002'].status === 'read' && 'go' in exH.vocab && Object.keys(exH.history).length === 5, Object.keys(exH.history).join());
+  check('H: export = one JSON with schema 4, reading history (with readAt) and vocab book', exH.schema === 4 && exH.app === 'english-reader' && exH.history['b1-001'].readAt === 1000 && exH.history['b1-003'].status === 'read' && exH.history['cl-002'].status === 'read' && 'go' in exH.vocab && Object.keys(exH.history).length === 5, Object.keys(exH.history).join());
   check('H: export toast mentions words and reading history', /1 个生词、5 条阅读记录/.test(await page.locator('.toast').last().innerText()));
   const before = await page.evaluate(() => JSON.parse(localStorage.getItem('ra:v1:progress')));
   // old vocab-only export (0.1–0.5 era file without progress)
@@ -521,10 +561,10 @@ try {
   await page.click('#import-merge');
   await page.waitForTimeout(150);
   check('H: export → wipe → import restores history and vocab exactly', isDeepStrictEqual(await page.evaluate(() => ({ p: JSON.parse(localStorage.getItem('ra:v1:progress')), v: JSON.parse(localStorage.getItem('ra:v1:vocab')) })), snap));
-  writeFileSync('/tmp/er-v3.json', JSON.stringify({ ...exH, schema: 4 }));
+  writeFileSync('/tmp/er-v3.json', JSON.stringify({ ...exH, schema: 5 }));
   await page.setInputFiles('#import-file', '/tmp/er-v3.json');
   await page.waitForTimeout(200);
-  check('H: newer schema (4) rejected with a message, nothing changed', /schema 版本（4）/.test(await page.locator('.toast').last().innerText()) && (await page.locator('#import-dialog').count()) === 0);
+  check('H: newer schema (5) rejected with a message, nothing changed', /schema 版本（5）/.test(await page.locator('.toast').last().innerText()) && (await page.locator('#import-dialog').count()) === 0);
   check('H: no console errors in reading-history flows', page.errors.length === 0, page.errors.join('; '));
   await page.context().close();
   }
@@ -556,7 +596,7 @@ try {
   await page.waitForSelector('.card-item');
   const st = () => page.evaluate(() => ({ meta: JSON.parse(localStorage.getItem('ra:v1:meta')), review: JSON.parse(localStorage.getItem('ra:v1:review') || 'null'), vocab: JSON.parse(localStorage.getItem('ra:v1:vocab')), progress: JSON.parse(localStorage.getItem('ra:v1:progress')), metaBak: localStorage.getItem('ra:v1:meta.bak-v2'), progBak2: localStorage.getItem('ra:v1:progress.bak-v2') }));
   let s0 = await st();
-  check('R: storage schema 2 → 3, old meta kept in ra:v1:meta.bak-v2, progress + vocab untouched', s0.meta.schema === 3 && s0.meta.lastBackupAt === 5 && isDeepStrictEqual(JSON.parse(s0.metaBak), oldMeta) && isDeepStrictEqual(s0.progress, oldProg) && isDeepStrictEqual(s0.vocab, rvVocab) && s0.progBak2 === null, JSON.stringify(s0.meta));
+  check('R: storage schema 2 → 4, old meta kept in ra:v1:meta.bak-v2, progress + vocab untouched', s0.meta.schema === 4 && s0.meta.lastBackupAt === 5 && isDeepStrictEqual(JSON.parse(s0.metaBak), oldMeta) && isDeepStrictEqual(s0.progress, oldProg) && isDeepStrictEqual(s0.vocab, rvVocab) && s0.progBak2 === null, JSON.stringify(s0.meta));
   check('R: review store keyed by word; orphan record (word not in vocab) pruned on load', isDeepStrictEqual(s0.review, { market: rvReview.market }), JSON.stringify(s0.review));
   // a 0.6.0 user without any review key gets an empty one
   {
@@ -566,7 +606,7 @@ try {
     await p2.reload();
     await p2.waitForSelector('.card-item');
     const m2 = await p2.evaluate(() => ({ m: JSON.parse(localStorage.getItem('ra:v1:meta')), r: localStorage.getItem('ra:v1:review') }));
-    check('R: migration without review data → ra:v1:review = {} and schema 3; due banner shows the new word', m2.m.schema === 3 && m2.r === '{}' && /今日待复习 1 个/.test(await p2.locator('#due-home').innerText()));
+    check('R: migration without review data → ra:v1:review = {} and schema 4; due banner shows the new word', m2.m.schema === 4 && m2.r === '{}' && /今日待复习 1 个/.test(await p2.locator('#due-home').innerText()));
     await p2.context().close();
   }
   // due count on the home page: 1 due review (market) + 4 new words (mastered "go" excluded)
@@ -703,11 +743,11 @@ try {
   const [dlR] = await Promise.all([page.waitForEvent('download'), page.click('#export-btn')]);
   await dlR.saveAs('/tmp/er-review.json');
   const exR = JSON.parse(readFileSync('/tmp/er-review.json', 'utf8'));
-  check('R: export = schema 3 with review keyed by word (orphans left out) + history + vocab', exR.schema === 3 && exR.app === 'english-reader' && isDeepStrictEqual(exR.review, { market: rvReview.market }) && exR.history['b1-001'] && exR.vocab.market && !('orphan2' in exR.review), JSON.stringify(exR.review));
+  check('R: export = schema 4 with review keyed by word (orphans left out) + history + vocab', exR.schema === 4 && exR.app === 'english-reader' && isDeepStrictEqual(exR.review, { market: rvReview.market }) && exR.history['b1-001'] && exR.vocab.market && !('orphan2' in exR.review), JSON.stringify(exR.review));
   check('R: export toast mentions review records', /1 条复习记录/.test(await page.locator('.toast').last().innerText()), await page.locator('.toast').last().innerText());
   // import schema 3: newer record from the file wins, older loses, new words + records added
   const newer = { ...rvReview.market, due: '2027-02-01', interval: 60, reps: 6, updatedAt: Date.now() + 1000 };
-  writeFileSync('/tmp/er-review-in.json', JSON.stringify({ ...exR, exportedAt: new Date().toISOString(), vocab: { ...exR.vocab, kettle: W({ snap: { zh: 'n. 水壶' } }) }, review: { market: newer, kettle: { due: TMRW, interval: 1, ease: 2.5, reps: 1, lapses: 0, lastGrade: 2, updatedAt: 5 }, ghost: { due: YDAY, interval: 1, ease: 2.5, reps: 1, lapses: 0, lastGrade: 2, updatedAt: 5 } } }));
+  writeFileSync('/tmp/er-review-in.json', JSON.stringify({ ...exR, schema: 3, levelTest: undefined, exportedAt: new Date().toISOString(), vocab: { ...exR.vocab, kettle: W({ snap: { zh: 'n. 水壶' } }) }, review: { market: newer, kettle: { due: TMRW, interval: 1, ease: 2.5, reps: 1, lapses: 0, lastGrade: 2, updatedAt: 5 }, ghost: { due: YDAY, interval: 1, ease: 2.5, reps: 1, lapses: 0, lastGrade: 2, updatedAt: 5 } } }));
   await page.setInputFiles('#import-file', '/tmp/er-review-in.json');
   await page.waitForSelector('#import-dialog');
   check('R: import dialog (schema 3) mentions review records', /3 条复习记录/.test(await page.locator('#import-summary').innerText()) && /备份格式 v3/.test(await page.locator('#import-dialog').innerText()), await page.locator('#import-summary').innerText());
@@ -762,6 +802,223 @@ try {
   check('R: mobile: tap grades the card', (await page.evaluate(() => Object.keys(JSON.parse(localStorage.getItem('ra:v1:review'))).length)) === 1);
   check('R: no console errors on mobile review', page.errors.length === 0, page.errors.join('; '));
   await page.context().close();
+  }
+
+
+  // ------------------------------------------------------------ level self-test (难度自测)
+  section('L: level self-test (难度自测): migration 3 → 4, take test, result, retake, history, suggestions, export / import, mobile');
+  {
+  page = await newPage();
+  await page.goto(url);
+  await page.waitForSelector('.card-item');
+  const W = (o) => ({ addedAt: 1, lastAt: 1, count: 1, mastered: false, snap: {}, ctx: [], ...o });
+  const oldMeta = { schema: 3, createdAt: 1, lastBackupAt: 7 };
+  const oldVocab = { go: W({ snap: { zh: 'vi. 去' } }) };
+  const oldReview = { go: { due: '2026-11-20', interval: 1, ease: 2.5, reps: 1, lapses: 0, lastGrade: 2, updatedAt: 9 } };
+  const oldProg = { 'b1-001': { status: 'read', scroll: 1, updatedAt: 1000, readAt: 1000 } };
+  await page.evaluate(([m, v, r, p]) => { localStorage.clear(); localStorage.setItem('ra:v1:meta', JSON.stringify(m)); localStorage.setItem('ra:v1:vocab', JSON.stringify(v)); localStorage.setItem('ra:v1:review', JSON.stringify(r)); localStorage.setItem('ra:v1:progress', JSON.stringify(p)); }, [oldMeta, oldVocab, oldReview, oldProg]);
+  await page.reload();
+  await page.waitForSelector('.card-item');
+  const st = () => page.evaluate(() => ({ meta: JSON.parse(localStorage.getItem('ra:v1:meta')), lt: JSON.parse(localStorage.getItem('ra:v1:levelTest') || 'null'), metaBak: localStorage.getItem('ra:v1:meta.bak-v3'), vocab: JSON.parse(localStorage.getItem('ra:v1:vocab')), review: JSON.parse(localStorage.getItem('ra:v1:review')), progress: JSON.parse(localStorage.getItem('ra:v1:progress')), settings: JSON.parse(localStorage.getItem('ra:v1:settings') || '{}') }));
+  let s0 = await st();
+  check('L: storage schema 3 → 4: ra:v1:levelTest = [], old meta kept in ra:v1:meta.bak-v3, vocab / review / progress untouched', s0.meta.schema === 4 && s0.meta.lastBackupAt === 7 && isDeepStrictEqual(s0.lt, []) && isDeepStrictEqual(JSON.parse(s0.metaBak), oldMeta) && isDeepStrictEqual(s0.vocab, oldVocab) && isDeepStrictEqual(s0.review, oldReview) && isDeepStrictEqual(s0.progress, oldProg), JSON.stringify(s0.meta));
+  await page.reload();
+  await page.waitForSelector('.card-item');
+  check('L: migration runs once (reload keeps schema 4, no new backup key)', (await page.evaluate(() => Object.keys(localStorage).filter((k) => k.includes('.bak-')).sort().join())) === 'ra:v1:meta.bak-v3');
+  // a corrupted levelTest value never breaks the app
+  {
+    const pc = await newPage();
+    await pc.goto(url);
+    await pc.evaluate(() => { localStorage.clear(); localStorage.setItem('ra:v1:meta', JSON.stringify({ schema: 4, createdAt: 1 })); localStorage.setItem('ra:v1:levelTest', '{not json'); });
+    await pc.goto(url + '#/level');
+    await pc.reload();
+    await pc.waitForSelector('#lt-start');
+    check('L: corrupted ra:v1:levelTest → treated as empty, page works', (await pc.locator('#lt-history').count()) === 0 && pc.errors.length === 0, pc.errors.join('; '));
+    await pc.context().close();
+  }
+  // entry points
+  check('L: home shows a gentle hint to take the test (no result yet)', (await page.locator('#level-hint').isVisible()) && /5 分钟难度自测/.test(await page.locator('#level-hint').innerText()));
+  check('L: nav has a 自测 link', (await page.locator('.navlinks a[data-nav="level"]').innerText()) === '自测');
+  await page.click('#level-hint-link');
+  await page.waitForSelector('#lt-start');
+  check('L: hint opens #/level; nav item active (aria-current)', page.url().endsWith('#/level') && (await page.locator('.navlinks a[data-nav="level"]').getAttribute('aria-current')) === 'page');
+  check('L: intro explains both parts, no history yet', /40 个/.test(await page.locator('.lt-intro').innerText()) && /12 个编造的假词/.test(await page.locator('.lt-intro').innerText()) && (await page.locator('#lt-history').count()) === 0);
+  // take the test with a fixed seed: knows every A2–B2 word, half of C1, no C2, no pseudo-word; reading B1 3/3, B2 2/3, C1 1/3
+  await page.goto(url + '#/level?seed=42');
+  await page.waitForSelector('#lt-start');
+  await page.click('#lt-start');
+  await page.waitForSelector('#lt-word');
+  check('L: test starts with focus on the heading, progressbar present, word shown', (await page.evaluate(() => document.activeElement?.tagName)) === 'H1' && (await page.locator('[role="progressbar"]').count()) === 1 && (await page.locator('#lt-wordbox[aria-live="polite"]').count()) === 1);
+  // 上一个: answer, go back, the same word is shown again
+  const w1 = (await page.locator('#lt-word').innerText()).trim();
+  await page.click('#lt-no');
+  await page.click('#lt-back');
+  check('L: 上一个 goes back to the previous word', (await page.locator('#lt-word').innerText()).trim() === w1 && (await page.locator('#lt-count').innerText()).startsWith('1 /'));
+  page.once('dialog', (d) => d.accept());
+  await page.click('#lt-quit');
+  await page.waitForSelector('#lt-start');
+  check('L: 退出 (confirmed) leaves the test without saving', (await st()).lt.length === 0);
+  await page.goto(url + '#/level?seed=42');
+  await page.reload();
+  await page.waitForSelector('#lt-start');
+  const profile = (band, i) => band === 'A2' || band === 'B1' || band === 'B2' || (band === 'C1' && i < 4);
+  const t1 = await takeTest(page, profile, { B1: 3, B2: 2, C1: 1 }, { keys: true });
+  const expected = makePlan(LT, 42);
+  check('L: seeded test is deterministic (same 52 words in the same order as makePlan(seed 42), same passages)', isDeepStrictEqual(t1.words, expected.vocab.map((x) => x.w)) && isDeepStrictEqual(t1.passages, expected.reading.map((r) => r.passage.id)), `${t1.words.slice(0, 5)} vs ${expected.vocab.slice(0, 5).map((x) => x.w)}`);
+  check('L: 52 items = 40 real words (8 per band) + 12 pseudo-words; one passage per level', t1.words.length === 52 && t1.words.filter((w) => LT_BAND.get(w) === 'pseudo').length === 12 && ['A2', 'B1', 'B2', 'C1', 'C2'].every((b) => t1.words.filter((w) => LT_BAND.get(w) === b).length === 8) && t1.passages.map((id) => id.slice(3, 5)).join() === 'b1,b2,c1');
+  let s1 = await st();
+  const r1 = s1.lt[0];
+  check('L: result → recommended B2 (vocab B2: C1 at 50% < 60%; reading B2: C1 1/3)', (await page.locator('#lt-rec').innerText()) === 'B2' && r1?.recommended === 'B2' && r1.vocab.level === 'B2' && r1.reading.level === 'B2' && r1.estimate === 'B2', JSON.stringify(r1 && { v: r1.vocab.level, r: r1.reading.level }));
+  check('L: result saved to ra:v1:levelTest with breakdown (bands, pseudo, corrected, reading, seed, duration)', s1.lt.length === 1 && r1.seed === 42 && r1.vocab.bands.C1.yes === 4 && r1.vocab.pseudo.yes === 0 && r1.vocab.corrected.C1 === 0.5 && r1.reading.levels.B1.correct === 3 && r1.reading.levels.C1.correct === 1 && r1.durationMs > 0 && r1.reliable === true && r1.unknown.length === 12);
+  check('L: result page shows the table, reading lines, unknown words with meanings, URL ?r=<takenAt>', (await page.locator('#lt-vocab-table tbody tr').count()) === 5 && /C1 短文：答对 1 \/ 3/.test(await page.locator('#lt-read').innerText()) && /不认识」的词（12）/.test(await page.locator('#lt-unknown summary').innerText()) && page.url().endsWith(`#/level?r=${r1.takenAt}`));
+  await page.click('#lt-unknown summary');
+  const unk = await page.locator('#lt-unknown li').first().innerText();
+  check('L: unknown word list carries the ECDICT meaning', /[\u4e00-\u9fff]/.test(unk), unk);
+  check('L: suggestion after the test: keep reading at B2 (fewer than 5 read)', (await page.locator('#lt-suggest').getAttribute('data-kind')) === 'more' && /B2/.test(await page.locator('#lt-suggest').innerText()));
+  await page.reload();
+  await page.waitForSelector('#lt-result');
+  check('L: reload keeps showing the saved result', (await page.locator('#lt-rec').innerText()) === 'B2');
+  await page.click('#lt-go');
+  await page.waitForSelector('.card-item');
+  check('L: 去读 B2 文章 → home with the B2 tab selected', (await page.locator('.tab.active').getAttribute('data-level')) === 'B2' && (await st()).settings.lastLevel === 'B2');
+  check('L: home hint hidden when there is nothing to suggest', !(await page.locator('#level-hint').isVisible()));
+  // retake: fresh random sample, different answers → B1
+  await page.goto(url + '#/level');
+  await page.waitForSelector('#lt-start');
+  check('L: intro now shows the last result and 再测一次', /B2/.test(await page.locator('#lt-latest').innerText()) && (await page.locator('#lt-start').innerText()) === '再测一次');
+  const t2 = await takeTest(page, (band) => band === 'A2', { B1: 2, B2: 0, C1: 0 });
+  check('L: retake draws a fresh random sample (not the seed-42 words)', t2.words.join() !== t1.words.join() && t2.words.length === 52);
+  s1 = await st();
+  check('L: retake → B1 (vocab A2, reading B1), both results kept', (await page.locator('#lt-rec').innerText()) === 'B1' && s1.lt.length === 2 && s1.lt[1].recommended === 'B1' && s1.lt[1].estimate === 'A2');
+  await page.click('#lt-retake');
+  await page.waitForSelector('#lt-word');
+  check('L: 再测一次 on the result page starts a new test', (await page.locator('#lt-count').innerText()).startsWith('1 /'));
+  page.once('dialog', (d) => d.accept());
+  await page.click('#lt-quit');
+  await page.waitForSelector('#lt-history');
+  const rows = await page.locator('.lt-hist-row').evaluateAll((els) => els.map((e) => Number(e.dataset.t)));
+  check('L: history lists both results, newest first', rows.length === 2 && rows[0] === s1.lt[1].takenAt && rows[1] === s1.lt[0].takenAt);
+  await page.click(`.lt-hist-row[data-t="${s1.lt[0].takenAt}"] a`);
+  await page.waitForSelector('#lt-result');
+  check('L: history item opens that result', (await page.locator('#lt-rec').innerText()) === 'B2' && /自测结果 · /.test(await page.locator('h1').innerText()));
+  // a learner hint caused by inconsistent answers
+  {
+    const pf = await newPage();
+    await pf.goto(url + '#/level');
+    await pf.waitForSelector('#lt-start');
+    await takeTest(pf, () => true, { B1: 3, B2: 3, C1: 3 });
+    const r = (await pf.evaluate(() => JSON.parse(localStorage.getItem('ra:v1:levelTest'))))[0];
+    check('L: "认识" to everything (incl. pseudo-words) → vocabulary corrected to 0, warning shown, still B1 (reading pulls vocab +1 only)', r.vocab.falseAlarm === 1 && r.reliable === false && r.vocab.level === 'A1' && r.recommended === 'B1' && (await pf.locator('#lt-warn').count()) === 1, JSON.stringify(r.vocab.corrected));
+    check('L: pseudo-words picked are listed', /编造的假词/.test(await pf.locator('#lt-pseudo-yes').innerText()));
+    await pf.context().close();
+  }
+  // upgrade suggestion from reading history + lookups: 8 B2 articles read with 1 saved word each → up to C1
+  const readIds = Array.from({ length: 8 }, (_, i) => `b2-${String(i + 1).padStart(3, '0')}`);
+  await page.evaluate((ids) => {
+    const p = JSON.parse(localStorage.getItem('ra:v1:progress'));
+    const v = JSON.parse(localStorage.getItem('ra:v1:vocab'));
+    ids.forEach((id, i) => { p[id] = { status: 'read', scroll: 1, updatedAt: Date.now(), readAt: Date.now() }; v['lw' + i] = { addedAt: 1, lastAt: 1, count: 1, mastered: false, snap: {}, ctx: [{ a: id, v: 1, p: 0, s: 'x', form: 'x', at: 1 }] }; });
+    localStorage.setItem('ra:v1:progress', JSON.stringify(p)); localStorage.setItem('ra:v1:vocab', JSON.stringify(v));
+  }, readIds);
+  await page.goto(url + '#/level');
+  await page.reload();
+  await page.waitForSelector('#lt-suggest');
+  check('L: suggestion: B2 read 8 with 1 saved word each → move up to C1', (await page.locator('#lt-suggest').getAttribute('data-kind')) === 'up' && /C1/.test(await page.locator('#lt-suggest h2 + p').innerText()) && /B2：已读 8 篇 · 每篇 1 个生词/.test(await page.locator('#lt-suggest').innerText()), await page.locator('#lt-suggest').innerText());
+  await page.goto(url);
+  await page.waitForSelector('.card-item');
+  check('L: home hint shows the upgrade suggestion', (await page.locator('#level-hint').isVisible()) && /可以试试 C1/.test(await page.locator('#level-hint').innerText()) && (await page.locator('#level-hint').getAttribute('data-kind')) === 'up');
+  await page.click('#level-hint-x');
+  await page.reload();
+  await page.waitForSelector('.card-item');
+  check('L: hint dismissed (×) stays hidden after reload', !(await page.locator('#level-hint').isVisible()));
+  // high lookup rate → step down
+  await page.evaluate((ids) => {
+    const v = JSON.parse(localStorage.getItem('ra:v1:vocab'));
+    ids.forEach((id) => { for (let k = 0; k < 11; k++) v[`hw-${id}-${k}`] = { addedAt: 1, lastAt: 1, count: 1, mastered: false, snap: {}, ctx: [{ a: id, v: 1, p: 0, s: 'x', form: 'x', at: 1 }] }; });
+    localStorage.setItem('ra:v1:vocab', JSON.stringify(v));
+  }, readIds);
+  await page.reload();
+  await page.waitForSelector('.card-item');
+  check('L: many lookups per B2 article → hint suggests going back to B1 (a new suggestion shows again after a dismiss)', (await page.locator('#level-hint').isVisible()) && /回到 B1/.test(await page.locator('#level-hint').innerText()));
+  // export schema 4
+  await page.goto(url + '#/words');
+  await page.waitForSelector('#export-btn');
+  const [dlL] = await Promise.all([page.waitForEvent('download'), page.click('#export-btn')]);
+  await dlL.saveAs('/tmp/er-level.json');
+  const exL = JSON.parse(readFileSync('/tmp/er-level.json', 'utf8'));
+  s1 = await st();
+  check('L: export = schema 4 with levelTest (both results) + history + vocab + review', exL.schema === 4 && Array.isArray(exL.levelTest) && isDeepStrictEqual(exL.levelTest, s1.lt) && exL.levelTest.length === 2 && exL.history && exL.vocab && exL.review);
+  check('L: export toast counts level-test records', /2 条自测记录/.test(await page.locator('.toast').last().innerText()), await page.locator('.toast').last().innerText());
+  // import schema 4: one new (older) result + a duplicate → 1 added, sorted by takenAt
+  const extra = { ...exL.levelTest[0], takenAt: exL.levelTest[0].takenAt - 864e5 * 10, recommended: 'C1', estimate: 'C1', score: 77 };
+  writeFileSync('/tmp/er-level-in.json', JSON.stringify({ ...exL, levelTest: [exL.levelTest[1], extra, { junk: true }] }));
+  await page.setInputFiles('#import-file', '/tmp/er-level-in.json');
+  await page.waitForSelector('#import-dialog');
+  check('L: import dialog (schema 4) mentions level-test records', /2 条自测记录/.test(await page.locator('#import-summary').innerText()) && /备份格式 v4/.test(await page.locator('#import-dialog').innerText()), await page.locator('#import-summary').innerText());
+  await page.click('#import-merge');
+  await page.waitForTimeout(100);
+  s1 = await st();
+  check('L: schema 4 import merges results by takenAt (1 added, duplicate skipped, junk dropped, sorted)', s1.lt.length === 3 && s1.lt[0].takenAt === extra.takenAt && s1.lt[0].recommended === 'C1' && s1.lt[2].recommended === 'B1');
+  check('L: import toast counts added level-test records', /新增 1 条自测记录/.test(await page.locator('.toast').last().innerText()), await page.locator('.toast').last().innerText());
+  const ltBefore = s1.lt;
+  // old files still merge, level-test data untouched
+  const oldFiles = [
+    ['schema 3 (0.7.0)', { schema: 3, app: 'english-reader', exportedAt: '2026-11-20T00:00:00.000Z', history: { 'c1-010': { status: 'read', scroll: 1, updatedAt: 5, readAt: 5 } }, vocab: { lark: W({ snap: { zh: 'n. 云雀' } }) }, review: { lark: { due: '2026-11-30', interval: 3, ease: 2.5, reps: 2, lapses: 0, lastGrade: 2, updatedAt: 5 } }, settings: {} }, 'lark', /没有自测记录/],
+    ['schema 2 (0.6.0)', { schema: 2, app: 'english-reader', exportedAt: '2026-11-19T00:00:00.000Z', history: { 'c1-011': { status: 'read', scroll: 1, updatedAt: 5, readAt: 5 } }, vocab: { heron: W() }, settings: {} }, 'heron', /没有复习记录/],
+    ['schema 1 vocab-only', { schema: 1, app: 'english-reader', exportedAt: '2026-01-01T00:00:00.000Z', vocab: { otter: W() } }, 'otter', /没有阅读记录/],
+    ['bare vocab map', { badger: W() }, 'badger', /旧版生词本文件/],
+  ];
+  for (const [label, f, wordKey, re] of oldFiles) {
+    writeFileSync('/tmp/er-level-old.json', JSON.stringify(f));
+    await page.setInputFiles('#import-file', '/tmp/er-level-old.json');
+    await page.waitForSelector('#import-dialog');
+    const dtext = await page.locator('#import-dialog').innerText();
+    await page.click('#import-merge');
+    await page.waitForTimeout(100);
+    const sx = await st();
+    check(`L: ${label} file imports by merge; level-test results unchanged`, re.test(dtext) && wordKey in sx.vocab && isDeepStrictEqual(sx.lt, ltBefore), dtext.slice(0, 120));
+  }
+  check('L: schema 3 import still merges its review data', (await st()).review.lark?.reps === 2);
+  // future schema rejected
+  writeFileSync('/tmp/er-level-future.json', JSON.stringify({ ...exL, schema: 5 }));
+  await page.setInputFiles('#import-file', '/tmp/er-level-future.json');
+  await page.waitForTimeout(200);
+  check('L: schema 5 file rejected with a message', /schema 版本（5）/.test(await page.locator('.toast').last().innerText()) && (await page.locator('#import-dialog').count()) === 0);
+  check('L: no console errors in level-test flows', page.errors.length === 0, page.errors.join('; '));
+  await page.context().close();
+  // keyboard-only + accessible reading questions
+  {
+    const pk = await newPage();
+    await pk.goto(url + '#/level?seed=7');
+    await pk.waitForSelector('#lt-start');
+    await pk.click('#lt-start');
+    for (let i = 0; i < 52; i++) await pk.keyboard.press(i % 2 ? 'ArrowLeft' : 'ArrowRight');
+    await pk.waitForSelector('#lt-passage');
+    const a11y = await pk.evaluate(() => ({ fieldsets: document.querySelectorAll('fieldset.lt-q').length, legends: document.querySelectorAll('fieldset.lt-q > legend').length, radios: document.querySelectorAll('fieldset.lt-q input[type=radio]').length, labelled: [...document.querySelectorAll('fieldset.lt-q input[type=radio]')].every((r) => document.querySelector(`label[for="${r.id}"]`)), nextDisabled: document.querySelector('#lt-next').disabled, lang: document.querySelector('#lt-passage').getAttribute('lang') }));
+    check('L: keyboard (→ / ←) answers all 52 words; reading = 3 fieldsets with legends, 12 labelled radios, 下一篇 disabled until answered, passage lang=en', a11y.fieldsets === 3 && a11y.legends === 3 && a11y.radios === 12 && a11y.labelled && a11y.nextDisabled && a11y.lang === 'en', JSON.stringify(a11y));
+    await pk.focus('#lt-q0-o0');
+    await pk.keyboard.press('Space');
+    await pk.keyboard.press('Tab');
+    check('L: radios work with the keyboard', await pk.evaluate(() => document.querySelector('#lt-q0-o0').checked));
+    await pk.context().close();
+  }
+  // mobile layout
+  {
+    const pm = await newPage({ viewport: { width: 375, height: 667 }, isMobile: true, hasTouch: true });
+    await pm.goto(url + '#/level');
+    await pm.waitForSelector('#lt-start');
+    const navOver = await pm.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
+    await pm.tap('#lt-start');
+    await pm.waitForSelector('#lt-word');
+    const mb = await pm.evaluate(() => { const y = document.querySelector('#lt-yes').getBoundingClientRect(), n = document.querySelector('#lt-no').getBoundingClientRect(); return { over: document.documentElement.scrollWidth > window.innerWidth, h: Math.min(y.height, n.height), row: Math.round(y.top) === Math.round(n.top), visible: y.bottom <= window.innerHeight }; });
+    check('L: mobile (375px): nav with 自测 fits, no horizontal scroll, 认识 / 不认识 side by side, ≥ 44px, on screen', !navOver && !mb.over && mb.h >= 44 && mb.row && mb.visible, JSON.stringify(mb));
+    for (let i = 0; i < 52; i++) await pm.tap(i % 3 ? '#lt-yes' : '#lt-no');
+    await pm.waitForSelector('#lt-passage');
+    const mo = await pm.evaluate(() => ({ over: document.documentElement.scrollWidth > window.innerWidth, opt: Math.min(...[...document.querySelectorAll('.lt-opt')].map((e) => e.getBoundingClientRect().height)) }));
+    check('L: mobile reading page: no horizontal scroll, options ≥ 44px tall', !mo.over && mo.opt >= 44, JSON.stringify(mo));
+    check('L: no console errors on mobile level test', pm.errors.length === 0, pm.errors.join('; '));
+    await pm.context().close();
+  }
   }
 
   // ------------------------------------------------------------ mobile
@@ -1034,7 +1291,7 @@ try {
     await page.goto(url);
     await page.waitForSelector('.card-item');
     const navTexts = (await page.locator('.navlinks a').allTextContents()).map((s) => s.trim());
-    check('G1: top nav is 文章 / 名著 / 生词本 / 设置', navTexts.join('|') === '文章|名著|生词本|设置', navTexts.join('|'));
+    check('G1: top nav is 文章 / 名著 / 生词本 / 自测 / 设置 (自测 added in 0.8.0)', navTexts.join('|') === '文章|名著|生词本|自测|设置', navTexts.join('|'));
     check('G1: 名著 is not a difficulty tab (still 3 tabs)', (await page.locator('.tab').count()) === 3 && !/名著/.test(await page.locator('.tabs').innerText()));
     const navBox = await page.locator('.navlinks a[data-nav="classics"]').boundingBox();
     check('G1: 名著 nav link is a ≥44px touch target', navBox.height >= 44);
@@ -1281,6 +1538,10 @@ try {
     await page.waitForFunction(() => document.querySelector('.rv-defs') && !/词典加载中|词典未收录/.test(document.querySelector('.rv-defs').textContent));
     await page.keyboard.press('3');
     check(`${label}: offline review page works (flip shows the definition, grading is saved)`, (await page.evaluate((w) => JSON.parse(localStorage.getItem('ra:v1:review'))[w]?.reps === 1, offW)) && /今日待复习/.test(await page.locator('#rv-summary').innerText()), offW);
+    await page.goto(base + '#/level');
+    await page.waitForSelector('#lt-start');
+    await takeTest(page, (band) => band !== 'pseudo' && band !== 'C2', { B1: 3, B2: 3, C1: 3 });
+    check(`${label}: offline level self-test works (word banks + passages from the cache, result saved)`, (await page.locator('#lt-rec').innerText()) === 'C1' && (await page.evaluate(() => JSON.parse(localStorage.getItem('ra:v1:levelTest')).length)) === 1);
     await page.goto(base + '#/settings');
     await page.waitForSelector('#offline');
     await page.waitForFunction(() => /已缓存/.test(document.querySelector('#offline').textContent), null, { timeout: 5000 });
@@ -1288,7 +1549,7 @@ try {
     const [dlO] = await Promise.all([page.waitForEvent('download'), page.click('#export-btn')]);
     await dlO.saveAs('/tmp/er-offline.json');
     const exO = JSON.parse(readFileSync('/tmp/er-offline.json', 'utf8'));
-    check(`${label}: offline export includes the reading history + review (schema 3)`, exO.schema === 3 && Object.keys(exO.review).length >= 1 && exO.history['cl-030']?.status === 'read' && (await page.locator('#settings-history .hs-row').count()) === 4);
+    check(`${label}: offline export includes the reading history + review + levelTest (schema 4)`, exO.schema === 4 && exO.levelTest?.length === 1 && Object.keys(exO.review).length >= 1 && exO.history['cl-030']?.status === 'read' && (await page.locator('#settings-history .hs-row').count()) === 4);
     await page.context().setOffline(false);
     await page.context().close();
   }

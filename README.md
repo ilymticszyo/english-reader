@@ -75,8 +75,8 @@ npm run screenshots
 - **进度**：文章列表、名著列表和设置页都显示四条进度线：B1、B2、C1、名著（已读 X / 100）。只统计当前内容里存在的 ID。
 - **阅读位置**：在读的文章/选段记住滚动位置（正文的比例，不是像素），重新打开时恢复。
 - **存储**：仍是 `localStorage` 的 `ra:v1:progress`，按文章 ID（`b1-001` / `cl-001` …）为键：`{ status: 'unread'|'reading'|'read', scroll: 0..1, updatedAt, readAt? }`。`readAt` 是读完的时间，改回未读时删除。`ra:v1:meta.schema` 从 1 升到 2：旧数据在首次加载时原地迁移（保留所有条目和未知字段，已读条目补 `readAt = updatedAt`），迁移前的原值另存一份在 `ra:v1:progress.bak-v1`。
-- **导出**：一个 JSON 文件 `{ schema: 2, app: 'english-reader', exportedAt, history, vocab, settings }`——`history` 就是上面的阅读记录，`vocab` 是生词本。（0.7.0 起为 schema 3，多一个 `review`，见下节。）
-- **导入**：只合并，不覆盖。生词按原规则合并（次数取大、例句合并、两边都掌握才算掌握）；阅读记录逐篇取较新的那次改动（所以另一台设备上「改回未读」也会生效），同一时间则取更靠后的状态，`readAt` 取最早。设置不导入。兼容旧文件：schema 1（`progress` 字段或只有 `vocab`）、没有 schema 的 `{ vocab }` 或裸生词本对象；schema 高于当前版本（0.7.0 起为 3）的文件会被拒绝并提示更新。
+- **导出**：一个 JSON 文件 `{ schema: 2, app: 'english-reader', exportedAt, history, vocab, settings }`——`history` 就是上面的阅读记录，`vocab` 是生词本。（0.7.0 起为 schema 3，多一个 `review`；0.8.0 起为 schema 4，再多一个 `levelTest`，见后文。）
+- **导入**：只合并，不覆盖。生词按原规则合并（次数取大、例句合并、两边都掌握才算掌握）；阅读记录逐篇取较新的那次改动（所以另一台设备上「改回未读」也会生效），同一时间则取更靠后的状态，`readAt` 取最早。设置不导入。兼容旧文件：schema 1（`progress` 字段或只有 `vocab`）、没有 schema 的 `{ vocab }` 或裸生词本对象；schema 高于当前版本（0.8.0 起为 4）的文件会被拒绝并提示更新。
 - 纯逻辑在 `src/shared/history.ts`，单元测试 `scripts/test-unit.ts`；截图 `node scripts/screenshots-history.mjs` → `screenshots/history-*.png`。
 
 ## 生词复习（0.7.0，#/review）
@@ -100,15 +100,44 @@ npm run screenshots
 - **存储**：`localStorage` 的 `ra:v1:review`，按生词本的词为键：`{ due: 'YYYY-MM-DD', interval, ease, reps, lapses, lastGrade: 0..3, updatedAt, firstDay? }`（`firstDay` 是第一次复习的日期，用于新词每日上限）。生词本里没有复习记录的词就是新词。
   - `ra:v1:meta.schema` 从 2 升到 3：只新增 `ra:v1:review`（已有的保留），生词本和阅读记录不变；升级前的 meta 另存在 `ra:v1:meta.bak-v2`。从 schema 1 升级的仍会先做阅读记录迁移并留 `ra:v1:progress.bak-v1`。
   - 从生词本移除一个词会同时删除它的复习记录（「撤销」会连复习进度一起恢复）；加载、导入、导出时都会清掉生词本里已没有的词的复习记录，所以不会留下孤立的待复习卡。标为「已掌握」的词保留复习记录，取消掌握后按原排期继续。
-- **导出 / 导入**：`{ schema: 3, app: 'english-reader', exportedAt, history, vocab, review, settings }`。导入仍只合并：复习记录逐词取 `updatedAt` 较新的那条（相同时取 reps 更多的）；文件里生词本没有的词的复习记录会被丢弃。schema 2（0.6.0）、schema 1 和没有版本号的旧生词本文件照常合并，本机的复习数据不变，新词成为新卡。
+- **导出 / 导入**：`{ schema: 3, app: 'english-reader', exportedAt, history, vocab, review, settings }`（0.8.0 起为 schema 4，多一个 `levelTest`）。导入仍只合并：复习记录逐词取 `updatedAt` 较新的那条（相同时取 reps 更多的）；文件里生词本没有的词的复习记录会被丢弃。schema 2（0.6.0）、schema 1 和没有版本号的旧生词本文件照常合并，本机的复习数据不变，新词成为新卡。
 - **离线**：复习页打包在主程序里，Service Worker 预缓存全部文件和词典，断网也能复习、评分。
 - 纯逻辑在 `src/shared/review.ts`（单元测试 `scripts/test-unit.ts`），页面 `src/views/review.ts`、`src/views/due.ts`；截图 `node scripts/screenshots-review.mjs` → `screenshots/review-*.png`（只写自己的文件，不删别的截图）。
+
+## 难度自测（0.8.0，#/level）
+
+- **入口**：顶部导航「自测」；首页（文章列表）「今日待复习」下方有一行可关闭的提示：还没测过时提示「做个 5 分钟难度自测」，之后只在有升级 / 降级 / 重测建议时出现（点 × 后，同一条建议不再显示，建议变了会再出现；这个偏好存在 `ra:v1:levelHint`，不随备份导出）。
+- **方法（约 5 分钟）**：
+  1. **认词（是 / 否）**：从 A2、B1、B2、C1、C2 五个词表级别各随机抽 8 个词（CEFR-J 词表 A2–B2、Octanove C1–C2；释义来自 ECDICT，结果页列出「不认识」的词和释义），再混入 12 个假词，共 52 个，打乱顺序。只答「认识」/「不认识」（快捷键 Y / → 和 N / ←，可「上一个」改答案）。
+  2. **阅读**：B1、B2、C1 各一段短文（每级 2 段里随机抽 1 段），每段 3 道四选一题（选项顺序随机）。短文直接取本站文章的段落（`content/leveltest/reading.json` 写明文章 ID 和段落号，构建时从文章里取原文），题目是原创的；每段有一个 `anchor` 句子片段，文章改了对不上时构建失败，避免题目和原文不符。
+- **题库**（构建时生成 `public/data/leveltest.json`，约 37 KB，Service Worker 预缓存，离线可测）：每级固定 120 个词（按哈希顺序从词表中挑出 ECDICT 有释义、不是词形变化的单词）；120 个假词由真实词的片段拼合，要求每个三字母组合都在真实词里出现过（读起来像英语），并且不在 ECDICT 全部词条及其词形里、去掉常见前后缀后也不是真词、与常用词（CEFR 词、ECDICT 词频前 3 万及它们的词形）编辑距离 > 1、不含不雅片段。
+- **可重复**：每次开始都用新的随机种子抽题；`#/level?seed=N` 让下一次测试固定（测试用），「再测一次」总是重新随机。
+- **计分与阈值**（`src/shared/leveltest.ts`）：
+  - 误认率 f = 选「认识」的假词 / 12；每级命中率 h 校正为 **(h − f) / (1 − f)**（截到 0–100%）。
+  - 认词水平：从 A2 起**连续**通过的最高一级，通过 = 校正后 **≥ 60%**；A2 没过记为 A1（A2 以下）。
+  - 阅读水平：从 B1 起连续通过的最高一级，通过 = 3 题答对 **≥ 2**；B1 没过记为 A2。
+  - 估计水平 = 两者中**较低**的一个（都要跟得上）；但如果阅读比认词高 ≥ 2 级（多半是认词答得太保守），取认词 + 1 级。阅读最高只测到 C1，所以认词 C2 + 阅读 C1 显示为「C1 以上」。
+  - **推荐起点** = 估计水平限制在 B1–C1（A2 及以下 → B1，C1 以上 → C1）。
+  - 误认率 > 25%（12 个假词里选了 4 个以上）时标记「结果可能不准」并建议重测。
+  - 综合分（0–100）= 60% × 五级校正后平均 + 40% × 阅读答对率；估计词汇量 ≈ Σ 各级校正后比例 × 该级词表词数（A1 按 A2 的比例算），只是粗略参考。
+- **升降级建议**（结果页和自测首页显示，首页一行提示）：对每个级别 L 统计「已读文章数」和「查词量」= 生词本里出自该级已读文章的（词, 文章）对数，**每篇生词 = 查词量 / 已读数**（默认开着「点击查词时自动收录」，所以收录 ≈ 查过的词）。评估的级别是实际在读的级别：已读 ≥ 5 篇的最高一级；没有的话用最近一次自测的推荐级别。
+  - 已读 < **5** 篇 → 「继续读」，提示还差几篇；
+  - 已读 ≥ **8** 篇且每篇生词 ≤ **3** → 建议**升一级**（C1 → 名著赏析）；
+  - 每篇生词 ≥ **10** → 建议**降一级**（B1 则建议留在 B1 并多用「复习生词」）；
+  - 介于两者之间 → 难度合适，继续；
+  - 实际在读的级别低于自测推荐、且每篇生词 ≤ 3 → 建议直接读推荐级别；
+  - 距最近一次自测超过 **30** 天且之后又读完 ≥ **10** 篇 → 额外提示重测。
+- **存储**：`localStorage` 的 `ra:v1:levelTest`，是一个按时间排序的列表（最多保留最近 100 次）：`{ v: 1, takenAt, seed, durationMs, vocab: { bands: {A2…C2: {yes, n}}, pseudo: {yes, n}, falseAlarm, corrected: {A2…C2}, level, size }, reading: { levels: {B1/B2/C1: {correct, n}}, level }, score, estimate, recommended, reliable, unknown: [...], pseudoYes: [...] }`。
+  - `ra:v1:meta.schema` 从 3 升到 4：只新增 `ra:v1:levelTest = []`（已有的保留），其余数据不变；升级前的 meta 另存在 `ra:v1:meta.bak-v3`。损坏的值按空列表处理。
+- **导出 / 导入**：`{ schema: 4, app: 'english-reader', exportedAt, history, vocab, review, levelTest, settings }`。导入仍只合并：自测记录按 `takenAt` 取并集（同一次测试不会重复，本机的那份优先），无效条目丢弃。schema 3 / 2 / 1 和没有版本号的旧生词本文件照常合并，本机的自测记录不变。**注意：0.7.0 及更早版本读不了 schema 4 的文件**（会提示先更新应用）。
+- 纯逻辑在 `src/shared/leveltest.ts`（单元测试 `scripts/test-unit.ts`），构建 `scripts/lib/leveltest.ts`，页面 `src/views/leveltest.ts`、`src/views/level-hint.ts`；截图 `node scripts/screenshots-leveltest.mjs` → `screenshots/leveltest-*.png`（只写自己的文件）。
 
 ## 目录结构
 
 ```
 content/
   articles/*.md           文章源文件（frontmatter + 正文，段落以空行分隔）
+  leveltest/reading.json  难度自测的阅读题（引用文章段落 + 原创题目）
   lemma-overrides.json    所有人工修正的唯一入口：lemma / lexicalizedIng / lexicalizedAdj / formSelfFirst / cefr / leadDefs / terms
 data-src/
   ecdict.csv              （gitignore，自动下载）
@@ -117,7 +146,7 @@ scripts/
   build-data.ts           构建期数据管线：解析文章 → 分词 → 词元还原 → 裁剪词典 → 校验 → 输出 JSON + 报告
   make-sw.mjs, sw-template.js  生成 Service Worker 预缓存清单
   package-zip.mjs         打包 dist → english-reader-dist.zip
-  lib/ecdict.ts, articles.ts
+  lib/ecdict.ts, articles.ts, classics.ts, leveltest.ts
   test-lemma.ts           词形还原回归测试（用完整 ECDICT）
   e2e.mjs                 Playwright 端到端测试；screenshots.mjs 截图；static-server.mjs
 src/

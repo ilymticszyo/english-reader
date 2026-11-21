@@ -1,5 +1,5 @@
 export interface Route {
-  name: 'list' | 'read' | 'classics' | 'classic' | 'words' | 'review' | 'settings' | 'about';
+  name: 'list' | 'read' | 'classics' | 'classic' | 'words' | 'review' | 'settings' | 'about' | 'level';
   id?: string;
   query: URLSearchParams;
 }
@@ -13,6 +13,7 @@ export function parseHash(hash = location.hash): Route {
   if (parts[0] === 'classics') return { name: 'classics', query };
   if (parts[0] === 'words') return { name: 'words', query };
   if (parts[0] === 'review') return { name: 'review', query };
+  if (parts[0] === 'level') return { name: 'level', query };
   if (parts[0] === 'about') return { name: 'about', query };
   if (parts[0] === 'settings') return { name: 'settings', query };
   return { name: 'list', query };

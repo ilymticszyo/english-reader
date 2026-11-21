@@ -1,3 +1,4 @@
+import type { LevelTestData } from './shared/leveltest.ts';
 import type { Archaisms, Article, ArticleIndex, Classic, ClassicIndex, ClassicsDict, DictEntry, EntriesMap, FormsMap, GlossItem, Level } from './shared/types.ts';
 import { LEVELS } from './shared/types.ts';
 import { glossKey, resolveToken, resolveWithGloss, viewOf } from './shared/text.ts';
@@ -13,6 +14,10 @@ async function getJson<T>(path: string): Promise<T> {
 
 let indexP: Promise<ArticleIndex> | null = null;
 export const loadIndex = () => (indexP ??= getJson<ArticleIndex>('data/index.json'));
+
+let levelTestP: Promise<LevelTestData> | null = null;
+/** 难度自测 word banks + pseudo-words + reading passages (precached, works offline) */
+export const loadLevelTest = () => (levelTestP ??= getJson<LevelTestData>('data/leveltest.json').catch((e) => { levelTestP = null; throw e; }));
 
 const articleCache = new Map<string, Promise<Article>>();
 export const loadArticle = (id: string) => {

@@ -8,6 +8,7 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { loadSourceArticles } from './lib/articles.ts';
 import { buildClassics } from './lib/classics.ts';
+import { buildLevelTest } from './lib/leveltest.ts';
 import { ROOT, ensureEcdict, hasOwnMeaning, lexAlt, loadCefr, loadDb, loadOverrides, applyCefrOverrides, makeEntry, parseExchange, rawLemmas, resolveForBuild } from './lib/ecdict.ts';
 import type { BuildRes } from './lib/ecdict.ts';
 import { resolveToken, splitSentences, tokenize, viewOf } from '../src/shared/text.ts';
@@ -233,6 +234,9 @@ for (const a of articles) {
 const classicFlags: string[] = [];
 const cl = buildClassics({ db, ov, cefr, mainForms: formsOut, mainEntries: allEntries, err, flag: (m) => classicFlags.push(m), articleIds: seenIds });
 
+// ---------- 难度自测 (level self-test): word banks + pseudo-words + reading passages from the articles ----------
+const lt = buildLevelTest({ db, cefr, articles, err });
+
 if (errors.length) {
   console.error('\n[data] BUILD FAILED:');
   for (const e of [...new Set(errors)]) console.error('  ✗ ' + e);
@@ -321,6 +325,7 @@ write('classics/index.json', cl.index);
 for (const c of cl.classics) write(`classics/${c.id}.json`, c);
 write('classics/archaisms.json', cl.archaisms);
 write('classics/dict.json', cl.dict);
+write('leveltest.json', lt.data);
 
 mkdirSync(resolve(ROOT, 'reports'), { recursive: true });
 writeFileSync(resolve(ROOT, 'reports/build-report.md'), md);
@@ -333,3 +338,5 @@ console.log(`[data] report → reports/build-report.md: ${[...byKind].filter(([k
 for (const f of flags) console.log('  ⚑ ' + f);
 console.log(`[data] classics: ${cl.classics.length} excerpts; extra dictionary forms=${Object.keys(cl.dict.forms).length} entries=${Object.keys(cl.dict.entries).length}; archaisms=${Object.keys(cl.archaisms).length}; review flags=${classicFlags.length}`);
 for (const f of classicFlags) console.log('  ⚑ classics ' + f);
+console.log(`[data] leveltest: ${Object.entries(lt.data.bands).map(([b, w]) => `${b}=${w.length}`).join(' ')} pseudo=${lt.data.pseudo.length} passages=${lt.data.passages.length} (${size('leveltest.json')} bytes)`);
+for (const f of lt.flags) console.log('  ⚑ leveltest ' + f);

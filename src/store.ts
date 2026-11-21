@@ -5,12 +5,16 @@ import { PROGRESS_SCHEMA, applyPatch, makeBackup, mergeProgress, mergeVocab, mig
 import type { Backup, ParsedBackup, Progress, ProgressMap, Status, VocabCtx, VocabItem, VocabMap } from './shared/history.ts';
 import { dayKey, dueToday, mergeReview, normalizeReview, pruneReview, schedule } from './shared/review.ts';
 import type { DueInfo, Grade, ReviewFilter, ReviewMap, ReviewRecord } from './shared/review.ts';
+import { mergeResults, normalizeResults, suggest } from './shared/leveltest.ts';
+import type { LevelResult, Suggestion } from './shared/leveltest.ts';
 export type { Backup, ParsedBackup, Progress, ProgressMap, Status, VocabCtx, VocabItem, VocabMap };
 export type { DueInfo, Grade, ReviewFilter, ReviewMap, ReviewRecord };
+export type { LevelResult, Suggestion };
 
 export const PREFIX = 'ra:v1:';
-/** storage schema (ra:v1:meta.schema): 2 = progress entries carry readAt (0.6.0); 3 = ra:v1:review added (0.7.0) */
-export const SCHEMA = 3;
+/** storage schema (ra:v1:meta.schema): 2 = progress entries carry readAt (0.6.0); 3 = ra:v1:review added (0.7.0);
+ *  4 = ra:v1:levelTest added (难度自测 results, 0.8.0) */
+export const SCHEMA = 4;
 
 export interface Settings {
   fontSize: number; // 0..3
@@ -61,7 +65,7 @@ function write(name: string, value: unknown): boolean {
   }
 }
 
-type Listener = (what: 'settings' | 'progress' | 'vocab' | 'review' | 'all') => void;
+type Listener = (what: 'settings' | 'progress' | 'vocab' | 'review' | 'levelTest' | 'all') => void;
 const listeners = new Set<Listener>();
 export const onChange = (fn: Listener) => {
   listeners.add(fn);
@@ -79,11 +83,13 @@ type Meta = { schema: number; createdAt: number; lastBackupAt?: number; migrated
 export const getMeta = () => read<Meta>('meta', { schema: SCHEMA, createdAt: 0 });
 let progress: ProgressMap = {};
 let review: ReviewMap = {};
+let levelTest: LevelResult[] = [];
 migrateStorage();
 
 /** Loads progress + review and upgrades older stores in place. Nothing is dropped:
  *  schema 1 → 2: progress entries get readAt; the untouched old progress is kept once under ra:v1:progress.bak-v1.
  *  schema 2 → 3: ra:v1:review is added (empty; an existing one is kept); the old meta is kept under ra:v1:meta.bak-v2.
+ *  schema 3 → 4: ra:v1:levelTest is added (empty list; an existing one is kept); the old meta is kept under ra:v1:meta.bak-v3.
  *  Review records of words no longer in the vocab book are pruned (unless the vocab book itself failed to parse). */
 function migrateStorage() {
   const metaRaw = localStorage.getItem(PREFIX + 'meta');
@@ -95,6 +101,10 @@ function migrateStorage() {
   let revParsed: unknown = {};
   try { revParsed = revRaw ? JSON.parse(revRaw) : {}; } catch { revParsed = {}; }
   review = normalizeReview(revParsed);
+  const ltRaw = localStorage.getItem(PREFIX + 'levelTest');
+  let ltParsed: unknown = [];
+  try { ltParsed = ltRaw ? JSON.parse(ltRaw) : []; } catch { ltParsed = []; }
+  levelTest = normalizeResults(ltParsed);
   if (vocabOk) {
     const pruned = pruneReview(review, vocab);
     if (Object.keys(pruned).length !== Object.keys(review).length) { review = pruned; write('review', review); }
@@ -103,6 +113,7 @@ function migrateStorage() {
     write('meta', { schema: SCHEMA, createdAt: Date.now() });
     if (raw) write('progress', progress);
     if (!revRaw) write('review', review);
+    if (!ltRaw) write('levelTest', levelTest);
     return;
   }
   const meta = getMeta();
@@ -114,6 +125,7 @@ function migrateStorage() {
   }
   try { localStorage.setItem(`${PREFIX}meta.bak-v${old}`, metaRaw); } catch { /* quota */ }
   if (!revRaw) write('review', review);
+  if (!ltRaw) write('levelTest', levelTest);
   write('meta', { ...meta, schema: SCHEMA, migratedAt: Date.now() });
 }
 export function markBackup() {
@@ -223,15 +235,29 @@ export function gradeWord(lemma: string, g: Grade): ReviewRecord | undefined {
   return review[lemma];
 }
 
+// ---------- 难度自测 (level self-test) ----------
+/** all results, oldest first */
+export const getLevelResults = () => levelTest;
+export const getLatestLevel = (): LevelResult | undefined => levelTest.at(-1);
+export function addLevelResult(r: LevelResult) {
+  levelTest = mergeResults(levelTest, [r]).list;
+  write('levelTest', levelTest);
+  emit('levelTest');
+}
+export const getSuggestion = (): Suggestion => suggest(getLatestLevel(), progress, vocab, Date.now());
+
 // ---------- backup ----------
-/** One JSON file: reading history + vocab book + review schedule (+ settings), with a schema version. */
-export const exportBackup = (): Backup<Settings> => makeBackup(progress, vocab, settings, new Date(), review);
+/** One JSON file: reading history + vocab book + review schedule + level-test results (+ settings), with a schema version. */
+export const exportBackup = (): Backup<Settings> => makeBackup(progress, vocab, settings, new Date(), review, levelTest);
 export const parseBackup = (text: string): ParsedBackup => parseBackupText(text);
 
 /** Import always merges (never replaces): local-only words / history stay, the newer change per article wins.
  *  Settings in the file are ignored (they are device preferences). */
-export function importBackup(b: ParsedBackup): { wordsAdded: number; historyAdded: number; historyUpdated: number; reviewAdded: number; reviewUpdated: number } {
+export function importBackup(b: ParsedBackup): { wordsAdded: number; historyAdded: number; historyUpdated: number; reviewAdded: number; reviewUpdated: number; levelTestAdded: number } {
   const v = mergeVocab(vocab, b.vocab);
+  const lt = mergeResults(levelTest, b.levelTest ?? []);
+  levelTest = lt.list;
+  write('levelTest', levelTest);
   const p = mergeProgress(progress, b.history);
   const r = mergeReview(review, pruneReview(b.review ?? {}, v.map));
   vocab = v.map;
@@ -241,7 +267,7 @@ export function importBackup(b: ParsedBackup): { wordsAdded: number; historyAdde
   write('progress', progress);
   write('review', review);
   emit('all');
-  return { wordsAdded: v.added, historyAdded: p.added, historyUpdated: p.updated, reviewAdded: r.added, reviewUpdated: r.updated };
+  return { wordsAdded: v.added, historyAdded: p.added, historyUpdated: p.updated, reviewAdded: r.added, reviewUpdated: r.updated, levelTestAdded: lt.added };
 }
 
 export const STORAGE_WARN_BYTES = 4 * 1024 * 1024;

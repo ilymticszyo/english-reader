@@ -1,0 +1,53 @@
+{
+  "_comment": "难度自测 reading passages. The passage text is taken from the site's own articles (article + paragraph indexes); questions are original. 'anchor' must occur in the passage (build fails otherwise, so an edited article cannot silently break its questions). 'answer' is the index of the correct option; options are shuffled at runtime.",
+  "passages": [
+    {
+      "id": "rt-b1-money", "level": "B1", "article": "b1-023", "paras": [0, 1], "anchor": "This way of trading is called barter",
+      "questions": [
+        { "q": "According to the text, how can people pay for things today?", "options": ["With coins, notes, cards and even phones", "Only with coins and notes", "Only with cards", "With rice and fish"], "answer": 0 },
+        { "q": "Why did people in the earliest times not need money?", "options": ["Families made their own food and clothes", "Everything in the shops was free", "They lived in very large groups", "They paid with their phones"], "answer": 0 },
+        { "q": "What is \"barter\"?", "options": ["Exchanging goods without using money", "Saving money in a bank", "Making new coins", "Going fishing with a friend"], "answer": 0 }
+      ]
+    },
+    {
+      "id": "rt-b1-letter", "level": "B1", "article": "b1-061", "paras": [0, 1], "anchor": "The stamp shows that you have paid",
+      "questions": [
+        { "q": "What does the text say about paper letters today?", "options": ["Millions of them still travel every day", "Nobody sends them any more", "They only travel inside one country", "They are faster than phone messages"], "answer": 0 },
+        { "q": "Why do you put a stamp on the envelope?", "options": ["To show that you have paid", "To show the address", "To make the envelope red", "To close the envelope"], "answer": 0 },
+        { "q": "Where can you take your letter, according to the text?", "options": ["To a red box in the street or a post office", "Only to your friend's house", "To a bank", "To a phone shop"], "answer": 0 }
+      ]
+    },
+    {
+      "id": "rt-b2-sleep", "level": "B2", "article": "b2-061", "paras": [1], "anchor": "This shift is biological",
+      "questions": [
+        { "q": "What happens to the body clock during puberty?", "options": ["It shifts so that sleepiness comes later", "It stops working for a few years", "It makes teenagers need much less sleep", "It moves earlier, as in adults"], "answer": 0 },
+        { "q": "When would a typical teenager naturally wake up?", "options": ["Around nine or ten in the morning", "At about six o'clock", "At eleven o'clock at night", "At the same time as younger children"], "answer": 0 },
+        { "q": "Why does the writer mention other mammals?", "options": ["To show that the change is natural, not just a habit", "To compare teenagers with pets", "To suggest that animals need more sleep", "To argue that culture causes the change"], "answer": 0 }
+      ]
+    },
+    {
+      "id": "rt-b2-hands", "level": "B2", "article": "b2-088", "paras": [0, 1], "anchor": "the connection is not simple",
+      "questions": [
+        { "q": "What does the writer say about the share of left-handed people?", "options": ["It has stayed about the same throughout history", "It has grown quickly in recent years", "It is very different from culture to culture", "It is close to one in two"], "answer": 0 },
+        { "q": "In most people, which side of the brain controls the right hand?", "options": ["The left side", "The right side", "Both sides equally", "Neither side"], "answer": 0 },
+        { "q": "\"The connection is not simple\" refers to the link between …", "options": ["which hand people prefer and how their brain is organised", "cave paintings and ancient tools", "culture and history", "parents and their children"], "answer": 0 }
+      ]
+    },
+    {
+      "id": "rt-c1-childhood", "level": "C1", "article": "c1-037", "paras": [0], "anchor": "relatively recent invention",
+      "questions": [
+        { "q": "What have some historians argued?", "options": ["That childhood as we understand it is a fairly modern idea", "That children used to have more time to play", "That schools invented childhood", "That young people were treated the same in every period"], "answer": 0 },
+        { "q": "In this passage, \"shielded\" is closest in meaning to …", "options": ["protected", "excluded", "trained", "rewarded"], "answer": 0 },
+        { "q": "What is the function of the first two sentences?", "options": ["They describe a common assumption that the writer then questions", "They give historical evidence for the main argument", "They criticise modern parents", "They define the word \"adulthood\""], "answer": 0 }
+      ]
+    },
+    {
+      "id": "rt-c1-rivers", "level": "C1", "article": "c1-005", "paras": [0], "anchor": "a remarkable reversal has begun",
+      "questions": [
+        { "q": "How did many cities treat their rivers for much of the twentieth century?", "options": ["Mainly as a convenient way to carry away waste and water", "As attractions for tourists", "As protected natural areas", "As their main source of drinking water"], "answer": 0 },
+        { "q": "Why did tight control of rivers seem sensible at the time?", "options": ["Rivers flooded, smelled and got in the way of building", "Engineers had nothing else to build", "Rivers were considered too beautiful to touch", "The law required all rivers to be covered"], "answer": 0 },
+        { "q": "What does \"a remarkable reversal\" refer to?", "options": ["Planners now trying to bring rivers back to life", "Rivers starting to flow in the opposite direction", "Factories moving back to the riverbanks", "More roads being built over rivers"], "answer": 0 }
+      ]
+    }
+  ]
+}

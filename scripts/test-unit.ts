@@ -1,11 +1,15 @@
 // Unit tests for the reading history (阅读记录) storage, migration, merge and backup file format (src/shared/history.ts)
-// and the vocabulary review scheduler (生词复习, src/shared/review.ts).
+// the vocabulary review scheduler (生词复习, src/shared/review.ts) and the level self-test (难度自测, src/shared/leveltest.ts).
 //   npm run test:unit
 import { deepStrictEqual as eq, ok, throws } from 'node:assert/strict';
 import { BACKUP_SCHEMA, PROGRESS_SCHEMA, applyPatch, makeBackup, mergeEntry, mergeProgress, mergeVocab, migrateEntry, migrateProgress, parseBackupText, readCounts } from '../src/shared/history.ts';
 import type { ProgressMap, VocabItem } from '../src/shared/history.ts';
 import { EASE_MAX, EASE_MIN, EASE_START, MAX_INTERVAL, NEW_PER_DAY, addDays, dayKey, daysBetween, dueToday, fmtInterval, isDue, matchesFilter, mergeRecord, mergeReview, nextInterval, normalizeRecord, normalizeReview, poolOf, pruneReview, schedule } from '../src/shared/review.ts';
 import type { Grade, ReviewMap, ReviewRecord } from '../src/shared/review.ts';
+import { BANDS, BAND_PASS, DOWN_RATE, MAX_RESULTS, MIN_READ, PSEUDO_N, READ_PASS, RETAKE_DAYS, RETAKE_READ, UP_RATE, UP_READ, VOCAB_PER_BAND, correct, estimateOf, levelStats, makePlan, mergeResults, normalizeResult, normalizeResults, readingLevel, rng, scoreTest, suggest, vocabLevel, vocabSize } from '../src/shared/leveltest.ts';
+import type { Answers, LevelTestData, TestPlan } from '../src/shared/leveltest.ts';
+import { existsSync, readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 let n = 0, fails = 0;
 const t = (name: string, fn: () => void) => {
@@ -15,7 +19,7 @@ const t = (name: string, fn: () => void) => {
 const W = (o: Partial<VocabItem> = {}): VocabItem => ({ addedAt: 1, lastAt: 1, count: 1, mastered: false, snap: { zh: 'x' }, ctx: [], ...o });
 
 // ---- schema versions
-t('schema versions: progress 2, backup 3', () => { eq(PROGRESS_SCHEMA, 2); eq(BACKUP_SCHEMA, 3); });
+t('schema versions: progress 2, backup 4', () => { eq(PROGRESS_SCHEMA, 2); eq(BACKUP_SCHEMA, 4); });
 
 // ---- migration (progress schema 1 → 2)
 const v1: Record<string, unknown> = {
@@ -99,11 +103,11 @@ const vocab = { go: W() };
 const hist: ProgressMap = { 'b1-001': { status: 'read', scroll: 1, updatedAt: 10, readAt: 10 } };
 t('export: one file with schema version, history and vocab', () => {
   const b = makeBackup(hist, vocab, { theme: 'dark' }, new Date(0));
-  eq(b, { schema: 3, app: 'english-reader', exportedAt: '1970-01-01T00:00:00.000Z', history: hist, vocab, review: {}, settings: { theme: 'dark' } });
+  eq(b, { schema: 4, app: 'english-reader', exportedAt: '1970-01-01T00:00:00.000Z', history: hist, vocab, review: {}, levelTest: [], settings: { theme: 'dark' } });
 });
 t('export → import round-trip is lossless', () => {
   const p = parseBackupText(JSON.stringify(makeBackup(hist, vocab, {})));
-  eq(p.history, hist); eq(p.vocab, vocab); eq(p.fileSchema, 3); ok(p.hasHistory); ok(p.hasReview); eq(p.review, {});
+  eq(p.history, hist); eq(p.vocab, vocab); eq(p.fileSchema, 4); ok(p.hasHistory); ok(p.hasReview); eq(p.review, {}); ok(p.hasLevelTest); eq(p.levelTest, []);
 });
 t('import: schema-1 file with progress → history (migrated)', () => {
   const p = parseBackupText(JSON.stringify({ schema: 1, app: 'english-reader', exportedAt: 'x', settings: {}, progress: { 'b2-001': { status: 'read', scroll: 1, updatedAt: 7 } }, vocab }));
@@ -120,7 +124,7 @@ t('import: bare { vocab } and bare vocab map (no app / schema field)', () => {
 });
 t('import: vocab items with missing fields are repaired', () => eq(parseBackupText(JSON.stringify({ vocab: { a: { addedAt: 3, ctx: [] } } })).vocab.a, { addedAt: 3, lastAt: 3, count: 1, mastered: false, snap: {}, ctx: [] }));
 t('import: rejects future schema, foreign files, bad JSON, missing vocab', () => {
-  throws(() => parseBackupText(JSON.stringify({ schema: 4, app: 'english-reader', vocab })), /schema 版本（4）/);
+  throws(() => parseBackupText(JSON.stringify({ schema: 5, app: 'english-reader', vocab })), /schema 版本（5）/);
   throws(() => parseBackupText(JSON.stringify({ app: 'other', vocab })), /不是本应用/);
   throws(() => parseBackupText('{"hello": 1}'), /不是本应用/);
   throws(() => parseBackupText('nope'), /JSON/);
@@ -308,13 +312,13 @@ t('pruneReview: drops records of words not in the vocab book', () => eq(Object.k
 
 // ---- backup schema 3
 const rev: ReviewMap = { go: R({ due: '2026-11-25', interval: 4, reps: 2, updatedAt: 99 }) };
-t('export schema 3: review included, orphan records left out', () => {
+t('export (schema 4): review included, orphan records left out', () => {
   const b = makeBackup(hist, vocab, {}, new Date(0), { ...rev, gone: R() });
-  eq(b.schema, 3); eq(b.review, rev);
+  eq(b.schema, 4); eq(b.review, rev);
 });
 t('export → import round-trip keeps the review data', () => {
   const p = parseBackupText(JSON.stringify(makeBackup(hist, vocab, {}, new Date(), rev)));
-  eq(p.review, rev); ok(p.hasReview); eq(p.fileSchema, 3);
+  eq(p.review, rev); ok(p.hasReview); eq(p.fileSchema, 4);
 });
 t('import schema 2 (no review): history + vocab merge, review untouched', () => {
   const p = parseBackupText(JSON.stringify({ schema: 2, app: 'english-reader', exportedAt: 'x', history: hist, vocab: { cat: W() }, settings: {} }));
@@ -340,5 +344,240 @@ t('import schema 3 merge: newest updatedAt wins per word', () => {
   eq(mergeReview({ go: R({ updatedAt: 1 }) }, p.review).map.go, rev.go); // file is newer
 });
 
-console.log(`unit (reading history / backup / review): ${n - fails}/${n} passed`);
+
+// ======================================================= level self-test (难度自测)
+{
+const DATA: LevelTestData = {
+  schema: 1,
+  bands: Object.fromEntries(BANDS.map((b) => [b, Array.from({ length: 30 }, (_, i) => ({ w: `${b.toLowerCase()}w${i}`, zh: `义${i}` }))])) as LevelTestData['bands'],
+  bandSizes: { A1: 1000, A2: 1000, B1: 2000, B2: 2000, C1: 1000, C2: 1000 },
+  pseudo: Array.from({ length: 40 }, (_, i) => `pseudo${i}`),
+  passages: (['B1', 'B2', 'C1'] as const).flatMap((lv) => [1, 2].map((k) => ({ id: `${lv}-${k}`, level: lv, article: `${lv.toLowerCase()}-00${k}`, title: 't', paras: [0], text: ['x'], questions: [0, 1, 2].map((q) => ({ q: `q${q}`, options: ['right', 'w1', 'w2', 'w3'], answer: 0 })) }))),
+};
+const plan = makePlan(DATA, 42);
+/** answer pattern: per band the share of real words answered "认识", the number of pseudo-words answered "认识", reading correct per level */
+const answer = (pl: TestPlan, yesShare: Partial<Record<string, number>>, pseudoYes: number, readCorrect: Partial<Record<string, number>>): Answers => {
+  const vocab: Record<string, boolean> = {};
+  const seen: Record<string, number> = {};
+  let py = 0;
+  for (const it of pl.vocab) {
+    if (it.band === 'pseudo') { vocab[it.w] = py++ < pseudoYes; continue; }
+    seen[it.band] = (seen[it.band] ?? 0) + 1;
+    vocab[it.w] = seen[it.band] <= Math.round((yesShare[it.band] ?? 0) * VOCAB_PER_BAND);
+  }
+  const reading = pl.reading.map((ri) => ri.questions.map((q, j) => (j < (readCorrect[ri.passage.level] ?? 0) ? q.answer : (q.answer + 1) % 4)));
+  return { vocab, reading };
+};
+const ALL = { A2: 1, B1: 1, B2: 1, C1: 1, C2: 1 };
+
+// ---- sampling
+t('plan: 8 words per band + 12 pseudo-words, one passage per level, 3 questions each', () => {
+  eq(plan.vocab.length, VOCAB_PER_BAND * 5 + PSEUDO_N);
+  for (const b of BANDS) eq(plan.vocab.filter((x) => x.band === b).length, VOCAB_PER_BAND);
+  eq(plan.vocab.filter((x) => x.band === 'pseudo').length, PSEUDO_N);
+  eq(plan.reading.map((r) => r.passage.level), ['B1', 'B2', 'C1']);
+  ok(plan.reading.every((r) => r.questions.length === 3));
+  eq(new Set(plan.vocab.map((x) => x.w)).size, plan.vocab.length);
+});
+t('plan: same seed → same test (deterministic); different seed → a different sample', () => {
+  eq(makePlan(DATA, 42), plan);
+  const other = makePlan(DATA, 43);
+  ok(other.vocab.map((x) => x.w).join() !== plan.vocab.map((x) => x.w).join());
+});
+t('plan: options shuffled, answer index follows the correct option', () => {
+  for (const r of [...plan.reading, ...makePlan(DATA, 7).reading]) for (const q of r.questions) eq(q.options[q.answer], 'right');
+  const positions = new Set<number>();
+  for (let s = 1; s < 30; s++) for (const r of makePlan(DATA, s).reading) positions.add(r.questions[0].answer);
+  ok(positions.size > 1);
+});
+t('plan: the sample is mixed (pseudo-words are not all at the end)', () => ok(plan.vocab.slice(0, 20).some((x) => x.band === 'pseudo')));
+t('rng: stays in [0, 1) and is reproducible', () => { const a = rng(5), b = rng(5); for (let i = 0; i < 100; i++) { const x = a(); ok(x >= 0 && x < 1); eq(x, b()); } });
+
+// ---- guessing correction
+t('correction: (h − f) / (1 − f), clamped', () => {
+  eq(correct(1, 0), 1); eq(correct(0.5, 0), 0.5); eq(correct(0.75, 0.5), 0.5); eq(correct(0.25, 0.5), 0); eq(correct(1, 1), 0); ok(Math.abs(correct(0.6, 0.2) - 0.5) < 1e-9);
+});
+t('scoring: all real words yes, no false alarms → every band 100%, false-alarm 0, reliable', () => {
+  const r = scoreTest(plan, answer(plan, ALL, 0, { B1: 3, B2: 3, C1: 3 }), DATA.bandSizes, 1000, 300000);
+  for (const b of BANDS) eq(r.vocab.corrected[b], 1);
+  eq([r.vocab.falseAlarm, r.reliable, r.score, r.vocab.level, r.reading.level, r.estimate, r.recommended], [0, true, 100, 'C2', 'C1', 'C1+', 'C1']);
+  eq(r.vocab.pseudo, { yes: 0, n: PSEUDO_N }); eq(r.unknown, []); eq(r.pseudoYes, []); eq(r.durationMs, 300000); eq(r.seed, 42);
+});
+t('scoring: saying "认识" to everything (incl. all pseudo-words) scores 0 vocabulary and is flagged unreliable', () => {
+  const r = scoreTest(plan, answer(plan, ALL, PSEUDO_N, { B1: 3, B2: 3, C1: 3 }), DATA.bandSizes, 1, 1);
+  for (const b of BANDS) eq(r.vocab.corrected[b], 0);
+  eq([r.vocab.falseAlarm, r.reliable, r.vocab.level, r.vocab.size], [1, false, 'A1', 0]);
+  eq(r.pseudoYes.length, PSEUDO_N);
+});
+t('scoring: false alarms lower every band (6/8 yes with 3/12 pseudo → 67%)', () => {
+  const r = scoreTest(plan, answer(plan, { A2: 0.75, B1: 0.75, B2: 0.75, C1: 0.75, C2: 0.75 }, 3, {}), DATA.bandSizes, 1, 1);
+  eq(r.vocab.falseAlarm, 0.25); eq(r.vocab.corrected.B1, 0.67); ok(r.reliable); // exactly at the 25% warning line = still reliable
+  ok(!scoreTest(plan, answer(plan, ALL, 4, {}), DATA.bandSizes, 1, 1).reliable);
+});
+t('scoring: "不认识" words are listed for the result page', () => {
+  const r = scoreTest(plan, answer(plan, { A2: 1, B1: 1, B2: 1, C1: 0.5, C2: 0 }, 0, {}), DATA.bandSizes, 1, 1);
+  eq(r.unknown.length, 4 + 8); ok(r.unknown.every((w) => /^(c1|c2)w/.test(w)));
+});
+t('vocabulary size: Σ corrected × band size (+ A1 × A2), rounded to 50', () => {
+  eq(vocabSize({ A2: 1, B1: 1, B2: 0.5, C1: 0, C2: 0 }, DATA.bandSizes), 1000 + 1000 + 2000 + 1000);
+  eq(vocabSize({ A2: 0, B1: 0, B2: 0, C1: 0, C2: 0 }, DATA.bandSizes), 0);
+});
+
+// ---- estimate boundaries
+const C = (o: Partial<Record<string, number>>) => ({ A2: 0, B1: 0, B2: 0, C1: 0, C2: 0, ...o }) as Record<'A2' | 'B1' | 'B2' | 'C1' | 'C2', number>;
+t('vocab level: pass at exactly 60%, 59% fails; must pass every band from A2 up', () => {
+  eq(BAND_PASS, 0.6);
+  eq(vocabLevel(C({ A2: 0.6, B1: 0.6 })), 'B1');
+  eq(vocabLevel(C({ A2: 0.6, B1: 0.59 })), 'A2');
+  eq(vocabLevel(C({ A2: 0.5, B1: 1, B2: 1 })), 'A1');
+  eq(vocabLevel(C({ A2: 1, B1: 1, B2: 0.4, C1: 1, C2: 1 })), 'B1');
+  eq(vocabLevel(C({ A2: 1, B1: 1, B2: 1, C1: 1, C2: 1 })), 'C2');
+});
+t('reading level: ≥ 2 of 3 passes, 1 of 3 fails; consecutive from B1', () => {
+  eq(READ_PASS, 2);
+  eq(readingLevel({ B1: { correct: 2, n: 3 }, B2: { correct: 2, n: 3 }, C1: { correct: 1, n: 3 } }), 'B2');
+  eq(readingLevel({ B1: { correct: 1, n: 3 }, B2: { correct: 3, n: 3 }, C1: { correct: 3, n: 3 } }), 'A2');
+  eq(readingLevel({ B1: { correct: 3, n: 3 }, B2: { correct: 3, n: 3 }, C1: { correct: 2, n: 3 } }), 'C1');
+  eq(readingLevel({}), 'A2');
+});
+t('estimate = lower of vocab and reading; recommendation clamped to B1…C1', () => {
+  eq(estimateOf('B2', 'C1'), { estimate: 'B2', recommended: 'B2' });
+  eq(estimateOf('C1', 'B2'), { estimate: 'B2', recommended: 'B2' });
+  eq(estimateOf('C1', 'C1'), { estimate: 'C1', recommended: 'C1' });
+  eq(estimateOf('C2', 'C1'), { estimate: 'C1+', recommended: 'C1' });
+  eq(estimateOf('C2', 'B2'), { estimate: 'B2', recommended: 'B2' });
+  eq(estimateOf('A2', 'B1'), { estimate: 'A2', recommended: 'B1' });
+  eq(estimateOf('A1', 'A2'), { estimate: 'A2', recommended: 'B1' });
+  eq(estimateOf('B1', 'A2'), { estimate: 'A2', recommended: 'B1' });
+});
+t('estimate: reading ≥ 2 levels above vocab (very cautious answers) → vocab + 1', () => {
+  eq(estimateOf('A2', 'C1'), { estimate: 'B1', recommended: 'B1' });
+  eq(estimateOf('B1', 'C1'), { estimate: 'B2', recommended: 'B2' });
+  eq(estimateOf('A1', 'B2'), { estimate: 'A2', recommended: 'B1' });
+});
+t('end-to-end scoring → recommendation for typical profiles', () => {
+  const rec = (y: Partial<Record<string, number>>, rd: Partial<Record<string, number>>, fa = 0) => scoreTest(plan, answer(plan, y, fa, rd), DATA.bandSizes, 1, 1).recommended;
+  eq(rec({ A2: 1, B1: 0.75, B2: 0.25 }, { B1: 3, B2: 1 }), 'B1');
+  eq(rec({ A2: 1, B1: 1, B2: 0.75, C1: 0.25 }, { B1: 3, B2: 2, C1: 1 }), 'B2');
+  eq(rec({ A2: 1, B1: 1, B2: 1, C1: 0.75, C2: 0.25 }, { B1: 3, B2: 3, C1: 2 }), 'C1');
+  eq(rec({ A2: 1, B1: 1, B2: 1, C1: 0.75 }, { B1: 3, B2: 3, C1: 1 }), 'B2'); // reading holds back
+  eq(rec({ A2: 0.75, B1: 0.75, B2: 0.75, C1: 0.75, C2: 0.75 }, { B1: 3, B2: 3, C1: 3 }, 6), 'B1'); // 50% false alarms: 75% yes → 50% corrected, every band fails
+  eq(rec(ALL, { B1: 3, B2: 3, C1: 3 }, 6), 'C1'); // …but knowing every real word still counts fully
+});
+
+// ---- recommendation logic (reading history + lookups)
+const P = (ids: string[], at = 2000) => Object.fromEntries(ids.map((id) => [id, { status: 'read', scroll: 1, updatedAt: at, readAt: at }]));
+const ids = (lv: string, n: number) => Array.from({ length: n }, (_, i) => `${lv}-${String(i + 1).padStart(3, '0')}`);
+/** k distinct saved words per article */
+const V = (arts: string[], k: number) => Object.fromEntries(arts.flatMap((a) => Array.from({ length: k }, (_, i) => [`${a}-w${i}`, { ctx: [{ a }] }])));
+const res = (recommended: 'B1' | 'B2' | 'C1', takenAt = 1000) => normalizeResult({ takenAt, recommended, estimate: recommended, score: 50 })!;
+t('thresholds are as documented', () => eq([MIN_READ, UP_READ, UP_RATE, DOWN_RATE, RETAKE_DAYS, RETAKE_READ], [5, 8, 3, 10, 30, 10]));
+t('suggest: no test yet → take the test', () => eq(suggest(undefined, {}, {}, 0).kind, 'test'));
+t('levelStats: read per level, lookups = saved (word, read article) pairs, rate per article', () => {
+  const prog = { ...P(ids('b1', 4)), 'b1-099': { status: 'reading', scroll: 0.5, updatedAt: 1 }, 'cl-001': { status: 'read', scroll: 1, updatedAt: 1 } };
+  const vocab = { ...V(ids('b1', 4), 2), x: { ctx: [{ a: 'b1-099' }] }, y: { ctx: [{ a: 'b1-001' }, { a: 'b1-001' }, { a: 'cl-001' }] } };
+  const s = levelStats(prog, vocab);
+  eq(s.B1, { read: 4, lookups: 9, rate: 2.3 }); eq(s.B2, { read: 0, lookups: 0, rate: 0 });
+});
+t('suggest: fewer than 5 read at the recommended level → "more" with the count still needed', () => {
+  const s = suggest(res('B2'), P(ids('b2', 3)), {}, 2000);
+  eq([s.kind, s.level, s.need], ['more', 'B2', 2]);
+});
+t('suggest: 8 read with ≤ 3 lookups per article → move up (B1 → B2, B2 → C1, C1 → classics)', () => {
+  eq([suggest(res('B1'), P(ids('b1', 8)), V(ids('b1', 8), 3), 2000).kind, suggest(res('B1'), P(ids('b1', 8)), V(ids('b1', 8), 3), 2000).target], ['up', 'B2']);
+  eq(suggest(res('B2'), P(ids('b2', 9)), V(ids('b2', 9), 1), 2000).target, 'C1');
+  eq(suggest(res('C1'), P(ids('c1', 8)), {}, 2000).target, 'classics');
+});
+t('suggest: boundaries — 7 read or 3.1 lookups per article is not enough to move up', () => {
+  eq(suggest(res('B1'), P(ids('b1', 7)), {}, 2000).kind, 'stay');
+  const arts = ids('b1', 10);
+  const v = { ...V(arts, 3), extra: { ctx: [{ a: 'b1-001' }] } }; // 31 / 10 = 3.1
+  eq(suggest(res('B1'), P(arts), v, 2000).kind, 'stay');
+  eq(suggest(res('B1'), P(arts), V(arts, 3), 2000).kind, 'up'); // 3.0 exactly
+});
+t('suggest: ≥ 10 lookups per article → step down (C1 → B2); at B1 → stay and review', () => {
+  const s = suggest(res('C1'), P(ids('c1', 5)), V(ids('c1', 5), 10), 2000);
+  eq([s.kind, s.target], ['down', 'B2']);
+  eq(suggest(res('B1'), P(ids('b1', 6)), V(ids('b1', 6), 12), 2000).kind, 'stay');
+  eq(suggest(res('B2'), P(ids('b2', 6)), V(ids('b2', 6), 9), 2000).kind, 'stay'); // 9 < 10
+});
+t('suggest: evaluates the highest level actually read (≥ 5 articles), not only the test result', () => {
+  const prog = { ...P(ids('b1', 20)), ...P(ids('b2', 6)) };
+  const s = suggest(res('B1'), prog, V(ids('b2', 6), 11), 2000);
+  eq([s.level, s.kind, s.target], ['B2', 'down', 'B1']);
+});
+t('suggest: reading below the recommendation with few lookups → up to the recommended level', () => {
+  const s = suggest(res('C1'), P(ids('b1', 6)), V(ids('b1', 6), 1), 2000);
+  eq([s.kind, s.level, s.target], ['up', 'B1', 'C1']);
+});
+t('suggest: retake after 30 days and ≥ 10 articles finished since the test', () => {
+  const day = 864e5;
+  ok(suggest(res('B1', 1000), P(ids('b1', 10), 1000 + day), {}, 1000 + 31 * day).retake);
+  ok(!suggest(res('B1', 1000), P(ids('b1', 10), 1000 + day), {}, 1000 + 29 * day).retake);
+  ok(!suggest(res('B1', 1000), P(ids('b1', 9), 1000 + day), {}, 1000 + 31 * day).retake);
+  ok(!suggest(res('B1', 5000), P(ids('b1', 10), 1000), {}, 5000 + 31 * day).retake); // read before the test
+});
+
+// ---- storage, merge, backup schema 4
+const full = scoreTest(plan, answer(plan, ALL, 1, { B1: 3, B2: 2, C1: 1 }), DATA.bandSizes, 1700000000000, 280000);
+t('normalizeResult: a real result survives unchanged (JSON round trip)', () => eq(normalizeResult(JSON.parse(JSON.stringify(full))), full));
+t('normalizeResult: junk dropped (no takenAt / bad level), partial records repaired', () => {
+  eq(normalizeResult(null), null); eq(normalizeResult({ recommended: 'B1' }), null); eq(normalizeResult({ takenAt: 5, recommended: 'A1' }), null); eq(normalizeResult({ takenAt: -1, recommended: 'B1' }), null);
+  const r = normalizeResult({ takenAt: 5, recommended: 'B2', score: 250, vocab: { corrected: { B1: 7 } } })!;
+  eq([r.score, r.vocab.corrected.B1, r.vocab.level, r.reading.level, r.reliable, r.unknown], [100, 1, 'A1', 'A2', true, []]);
+});
+t('normalizeResults: non-array → [], sorted oldest first, duplicates by takenAt collapsed, capped at 100', () => {
+  eq(normalizeResults({ a: 1 }), []); eq(normalizeResults(null), []);
+  const many = Array.from({ length: 130 }, (_, i) => ({ ...full, takenAt: 1000 + i }));
+  const n = normalizeResults(([...many].reverse() as unknown[]).concat([{ ...full, takenAt: 1000 }, 'junk']));
+  eq(n.length, MAX_RESULTS); eq(n[0].takenAt, 1030); eq(n.at(-1)!.takenAt, 1129);
+});
+t('mergeResults: union by takenAt (commutative on the set), counts added, local copy kept on a duplicate', () => {
+  const a = [{ ...full, takenAt: 1 }, { ...full, takenAt: 3 }], b = [{ ...full, takenAt: 2 }, { ...full, takenAt: 3, score: 1 }];
+  const m = mergeResults(a, b);
+  eq(m.list.map((x) => x.takenAt), [1, 2, 3]); eq(m.added, 1); eq(m.list[2].score, full.score);
+  eq(mergeResults(b, a).list.map((x) => x.takenAt), [1, 2, 3]);
+  eq(mergeResults(m.list, m.list).added, 0);
+});
+t('export schema 4 includes levelTest; round trip is lossless', () => {
+  const b = makeBackup(hist, vocab, {}, new Date(0), {}, [full]);
+  eq(b.schema, 4); eq(b.levelTest, [full]);
+  const p = parseBackupText(JSON.stringify(b));
+  eq(p.levelTest, [full]); ok(p.hasLevelTest); eq(p.fileSchema, 4);
+});
+t('import schema 3 / 2 / 1 / bare vocab: no level-test data, local results untouched by the merge', () => {
+  for (const f of [{ schema: 3, app: 'english-reader', vocab, history: {}, review: {} }, { schema: 2, app: 'english-reader', vocab, history: {} }, { schema: 1, app: 'english-reader', vocab }, { vocab }, vocab]) {
+    const p = parseBackupText(JSON.stringify(f));
+    ok(!p.hasLevelTest); eq(p.levelTest, []);
+    eq(mergeResults([full], p.levelTest), { list: [full], added: 0 });
+  }
+});
+t('import schema 3 file carrying a levelTest field ignores it (not part of that format)', () => ok(!parseBackupText(JSON.stringify({ schema: 3, app: 'english-reader', vocab, levelTest: [full] })).hasLevelTest));
+t('import schema 4: junk results dropped, good ones kept, merged by takenAt', () => {
+  const p = parseBackupText(JSON.stringify({ schema: 4, app: 'english-reader', vocab, history: {}, review: {}, levelTest: [full, { nope: 1 }, 'x', { ...full, takenAt: 5 }] }));
+  eq(p.levelTest.map((x) => x.takenAt), [5, full.takenAt]);
+  eq(mergeResults([{ ...full, takenAt: 5 }], p.levelTest).added, 1);
+});
+t('import schema 4 with a non-array levelTest → treated as absent', () => ok(!parseBackupText(JSON.stringify({ schema: 4, app: 'english-reader', vocab, levelTest: {} })).hasLevelTest));
+
+// ---- the built data file (public/data/leveltest.json), when present
+const built = resolve(import.meta.dirname, '../public/data/leveltest.json');
+if (existsSync(built)) {
+  const D: LevelTestData = JSON.parse(readFileSync(built, 'utf8'));
+  t('built data: ≥ 3× the sampled words per band and pseudo-words; 2 passages per level with 3 questions', () => {
+    for (const b of BANDS) ok(D.bands[b].length >= VOCAB_PER_BAND * 3 && D.bands[b].every((x) => /^[a-z]+$/.test(x.w) && x.zh), b);
+    ok(D.pseudo.length >= PSEUDO_N * 3);
+    for (const lv of ['B1', 'B2', 'C1']) eq(D.passages.filter((p) => p.level === lv).length, 2);
+    ok(D.passages.every((p) => p.questions.length === 3 && p.text.length >= 1 && p.article.startsWith(p.level.toLowerCase() + '-')));
+  });
+  t('built data: pseudo-words are never real bank words, and banks do not overlap', () => {
+    const real = new Set(BANDS.flatMap((b) => D.bands[b].map((x) => x.w)));
+    eq(real.size, BANDS.reduce((s, b) => s + D.bands[b].length, 0));
+    ok(D.pseudo.every((w) => !real.has(w) && /^[a-z]{5,9}$/.test(w)));
+  });
+  t('built data: a full plan from the real data has 52 words and 3 passages', () => { const pl = makePlan(D, 1); eq([pl.vocab.length, pl.reading.length], [52, 3]); });
+}
+}
+
+console.log(`unit (reading history / backup / review / level test): ${n - fails}/${n} passed`);
 process.exit(fails ? 1 : 0);

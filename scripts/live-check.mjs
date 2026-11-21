@@ -1,6 +1,6 @@
 // Smoke test against a deployed URL.
 // Usage: node scripts/live-check.mjs https://user.github.io/english-reader/ [outPrefix] [classicsOutPrefix]
-//   EXPECT_VERSION=0.6.0+abcd1234  require that exact deployed version (e.g. from dist/version.json)
+//   EXPECT_VERSION=0.8.0+abcd1234  require that exact deployed version (e.g. from dist/version.json)
 //   PROFILE=/tmp/er-live-profile    reuse a browser profile: run once before the deploy (WARM=1 only caches the old
 //                                   version and exits), then again after it to check the update banner + takeover.
 import { chromium } from 'playwright';
@@ -99,11 +99,20 @@ await page.waitForSelector('.card .card-gloss');
 check('offline: classic page + gloss + dictionary work', /[\u4e00-\u9fff]/.test(await page.locator('.card .card-gloss').innerText()) && (await page.locator('.card .card-defs').count()) === 1);
 await page.screenshot({ path: `${clOut}-04-offline.png` });
 await page.keyboard.press('Escape');
+// 难度自测 (0.8.0) offline: the word banks + passages are precached
+await page.goto(url + '#/level');
+await page.waitForSelector('#lt-start', { timeout: 15000 });
+await page.click('#lt-start');
+await page.waitForSelector('#lt-word');
+check('offline: level self-test (#/level) starts from the precached data/leveltest.json', /^[a-z]+$/.test((await page.locator('#lt-word').innerText()).trim()) && await page.evaluate(async () => { const k = (await caches.keys()).find((x) => x.startsWith('english-reader-')); const c = await caches.open(k); return (await c.keys()).some((r) => r.url.endsWith('/data/leveltest.json')); }));
+page.once('dialog', (d) => d.accept());
+await page.click('#lt-quit');
+await page.waitForSelector('#lt-start');
 await ctx.setOffline(false);
 // ---- classics (名著赏析)
 await page.goto(url);
 await page.waitForSelector('.card-item');
-check('nav: 文章 / 名著 / 生词本 / 设置', (await page.locator('.navlinks a').allTextContents()).map((x) => x.trim()).join('|') === '文章|名著|生词本|设置');
+check('nav: 文章 / 名著 / 生词本 / 自测 / 设置', (await page.locator('.navlinks a').allTextContents()).map((x) => x.trim()).join('|') === '文章|名著|生词本|自测|设置');
 await page.click('.navlinks a[data-nav="classics"]');
 await page.waitForSelector('.classic-card');
 check('classics: 名著 nav opens #/classics with 100 excerpts', page.url().endsWith('#/classics') && (await page.locator('.classic-card').count()) === 100, String(await page.locator('.classic-card').count()));
@@ -142,7 +151,7 @@ await page.keyboard.press('Escape');
   await hp.reload();
   await hp.waitForSelector('.card-item');
   const mig = await hp.evaluate(() => ({ p: JSON.parse(localStorage.getItem('ra:v1:progress')), m: JSON.parse(localStorage.getItem('ra:v1:meta')) }));
-  check('history: old progress migrated without loss (storage schema 3, readAt added)', mig.m.schema === 3 && Object.keys(old).every((id) => mig.p[id]?.status === old[id].status && mig.p[id].updatedAt === old[id].updatedAt) && mig.p['b1-001'].readAt === 1000, JSON.stringify(mig.m));
+  check('history: old progress migrated without loss (storage schema 4, readAt added)', mig.m.schema === 4 && Object.keys(old).every((id) => mig.p[id]?.status === old[id].status && mig.p[id].updatedAt === old[id].updatedAt) && mig.p['b1-001'].readAt === 1000, JSON.stringify(mig.m));
   const rows = await hp.locator('.history-summary .hs-row').allInnerTexts();
   check('history: four progress lines B1 / B2 / C1 / 名著', rows.length === 4 && /已读 1 \/ 100/.test(rows[0]) && /名著\s*已读 1 \/ 100/.test(rows[3]), rows.join(' | '));
   await hp.goto(url + '#/read/b1-004');
@@ -165,7 +174,7 @@ await page.keyboard.press('Escape');
   await hp.waitForSelector('#settings-history .hs-row');
   const [dl] = await Promise.all([hp.waitForEvent('download'), hp.click('#export-btn')]);
   const ex = JSON.parse(await (await import('node:fs/promises')).readFile(await dl.path(), 'utf8'));
-  check('history: export = one JSON, schema 3, reading history + vocab + review', ex.schema === 3 && ex.review && typeof ex.review === 'object' && ex.app === 'english-reader' && ex.history['b1-004']?.status === 'read' && ex.vocab && typeof ex.vocab === 'object');
+  check('history: export = one JSON, schema 4, reading history + vocab + review + levelTest', ex.schema === 4 && Array.isArray(ex.levelTest) && ex.review && typeof ex.review === 'object' && ex.app === 'english-reader' && ex.history['b1-004']?.status === 'read' && ex.vocab && typeof ex.vocab === 'object');
   const { writeFileSync } = await import('node:fs');
   writeFileSync('/tmp/er-live-old-vocab.json', JSON.stringify({ schema: 1, app: 'english-reader', exportedAt: '2026-01-01T00:00:00.000Z', vocab: { zebra: { addedAt: 1, lastAt: 1, count: 1, mastered: false, snap: { zh: 'n. 斑马' }, ctx: [] } } }));
   await hp.setInputFiles('#import-file', '/tmp/er-live-old-vocab.json');
@@ -186,6 +195,45 @@ await page.keyboard.press('Escape');
   await hp.screenshot({ path: `${out}-review-01-card.png` });
   await hp.keyboard.press('3');
   check('review: flashcard flips and grading 记得 schedules the word (due tomorrow)', await hp.evaluate((w) => { const r = JSON.parse(localStorage.getItem('ra:v1:review'))[w]; return r && r.reps === 1 && r.interval === 1; }, rw), rw);
+  // ---- 难度自测 (level self-test, 0.8.0): home hint, nav, a full seeded test, result saved, schema 4 export
+  const LT = await (await fetch(new URL('data/leveltest.json', url), { cache: 'no-store' })).json();
+  const pseudo = new Set(LT.pseudo);
+  const c2 = new Set(LT.bands.C2.map((x) => x.w));
+  await hp.evaluate(() => localStorage.removeItem('ra:v1:levelHint'));
+  await hp.goto(url + '#/');
+  await hp.waitForSelector('.card-item');
+  check('leveltest: home hint + 自测 nav link', (await hp.locator('#level-hint').isVisible()) && /难度自测/.test(await hp.locator('#level-hint').innerText()) && (await hp.locator('.navlinks a[data-nav="level"]').count()) === 1);
+  await hp.goto(url + '#/level?seed=2026');
+  await hp.waitForSelector('#lt-start');
+  await hp.click('#lt-start');
+  let nWords = 0;
+  for (;;) {
+    const w = (await hp.locator('#lt-word').innerText()).trim();
+    const total = Number((await hp.locator('#lt-count').innerText()).split('/')[1]);
+    nWords++;
+    await hp.click(pseudo.has(w) || c2.has(w) ? '#lt-no' : '#lt-yes');
+    if (nWords >= total) break;
+    await hp.waitForFunction((k) => document.querySelector('#lt-count')?.textContent.startsWith(k + ' /'), nWords + 1);
+  }
+  for (let k = 0; k < 3; k++) {
+    await hp.waitForFunction((k) => document.querySelector('h1')?.textContent.includes(`（${k + 1} / 3）`), k);
+    const id = await hp.locator('#lt-passage').getAttribute('data-id');
+    const P = LT.passages.find((x) => x.id === id);
+    for (let q = 0; q < 3; q++) {
+      const right = P.questions[q].options[P.questions[q].answer];
+      const labels = hp.locator(`.lt-q[data-q="${q}"] .lt-opt`);
+      const texts = (await labels.allInnerTexts()).map((t) => t.trim());
+      await labels.nth(texts.indexOf(right)).click();
+    }
+    await hp.click('#lt-next');
+  }
+  await hp.waitForSelector('#lt-result');
+  const lt = await hp.evaluate(() => JSON.parse(localStorage.getItem('ra:v1:levelTest')));
+  check('leveltest: 52 words + 3 passages → result C1 (vocab C1, reading C1), saved to ra:v1:levelTest', nWords === 52 && (await hp.locator('#lt-rec').innerText()) === 'C1' && lt.length === 1 && lt[0].recommended === 'C1' && lt[0].seed === 2026, JSON.stringify(lt[0] && { v: lt[0].vocab.level, r: lt[0].reading.level }));
+  await hp.screenshot({ path: `${out}-leveltest-01-result.png`, fullPage: true });
+  const [dl2] = await Promise.all([hp.waitForEvent('download'), hp.click('#lt-home').then(() => hp.goto(url + '#/settings')).then(() => hp.waitForSelector('#export-btn')).then(() => hp.click('#export-btn'))]);
+  const ex2 = JSON.parse(await (await import('node:fs/promises')).readFile(await dl2.path(), 'utf8'));
+  check('leveltest: export schema 4 includes the result', ex2.schema === 4 && ex2.levelTest?.length === 1 && ex2.levelTest[0].takenAt === lt[0].takenAt);
   await hctx.close();
   await hb.close();
 }

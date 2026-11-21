@@ -3,11 +3,14 @@
 // Storage: localStorage `ra:v1:progress` = { [articleId | classicId]: Progress }  (keyed by article ID; cl-… ids are classics)
 //   progress schema 1 (≤ 0.5.0): { status, scroll, updatedAt }
 //   progress schema 2 (0.6.0):   + readAt (first time the article was finished; removed when marked unread again)
-// Backup file (one JSON): { schema: 3, app: 'english-reader', exportedAt, history, vocab, review, settings }
+// Backup file (one JSON): { schema: 4, app: 'english-reader', exportedAt, history, vocab, review, levelTest, settings }
+//   schema 4 (0.8.0) adds `levelTest` (难度自测 results, a list merged by takenAt, see leveltest.ts);
 //   schema 3 (0.7.0) adds `review` (spaced-repetition data per word, see review.ts); schema 2 files have no review;
 //   schema 1 files used `progress` instead of `history`; vocab-only files (no progress at all) are accepted too.
 import { normalizeReview, pruneReview } from './review.ts';
 import type { ReviewMap } from './review.ts';
+import { normalizeResults } from './leveltest.ts';
+import type { LevelResult } from './leveltest.ts';
 
 export type Status = 'unread' | 'reading' | 'read';
 export interface Progress {
@@ -37,7 +40,7 @@ export interface VocabItem {
 export type VocabMap = Record<string, VocabItem>;
 
 export const PROGRESS_SCHEMA = 2;
-export const BACKUP_SCHEMA = 3;
+export const BACKUP_SCHEMA = 4;
 const STATUSES: Status[] = ['unread', 'reading', 'read'];
 const RANK: Record<Status, number> = { unread: 0, reading: 1, read: 2 };
 const num = (x: unknown, d = 0) => (typeof x === 'number' && Number.isFinite(x) ? x : d);
@@ -144,6 +147,8 @@ export interface Backup<S = Record<string, unknown>> {
   vocab: VocabMap;
   /** spaced-repetition data keyed by vocab word (schema 3+) */
   review: ReviewMap;
+  /** 难度自测 results, oldest first (schema 4+) */
+  levelTest: LevelResult[];
   settings?: S;
 }
 export interface ParsedBackup extends Backup {
@@ -151,11 +156,12 @@ export interface ParsedBackup extends Backup {
   fileSchema: number;
   hasHistory: boolean;
   hasReview: boolean;
+  hasLevelTest: boolean;
 }
 
 /** Review records of words that are not in the vocab book are left out (no orphans in the file). */
-export function makeBackup<S>(history: ProgressMap, vocab: VocabMap, settings: S, now = new Date(), review: ReviewMap = {}): Backup<S> {
-  return { schema: BACKUP_SCHEMA, app: 'english-reader', exportedAt: now.toISOString(), history, vocab, review: pruneReview(review, vocab), settings };
+export function makeBackup<S>(history: ProgressMap, vocab: VocabMap, settings: S, now = new Date(), review: ReviewMap = {}, levelTest: LevelResult[] = []): Backup<S> {
+  return { schema: BACKUP_SCHEMA, app: 'english-reader', exportedAt: now.toISOString(), history, vocab, review: pruneReview(review, vocab), levelTest, settings };
 }
 
 const looksLikeVocabMap = (o: Record<string, unknown>) => {
@@ -163,7 +169,7 @@ const looksLikeVocabMap = (o: Record<string, unknown>) => {
   return vals.length > 0 && vals.every((v) => isObj(v) && ('addedAt' in v || 'ctx' in v || 'snap' in v));
 };
 
-/** Parse any export this app has produced: schema 3 (history + vocab + review), schema 2 (history + vocab), schema 1 (progress + vocab, or vocab only),
+/** Parse any export this app has produced: schema 4 (+ levelTest), schema 3 (history + vocab + review), schema 2 (history + vocab), schema 1 (progress + vocab, or vocab only),
  *  and a bare vocab book ({ vocab } or the vocab map itself). Throws a user-facing (Chinese) message otherwise. */
 export function parseBackupText(text: string): ParsedBackup {
   let o: any;
@@ -194,7 +200,9 @@ export function parseBackupText(text: string): ParsedBackup {
   const history = migrateProgress(rawHist);
   const hasReview = fileSchema >= 3 && isObj(o.review);
   const review = hasReview ? normalizeReview(o.review) : {};
-  return { schema: BACKUP_SCHEMA, app: 'english-reader', exportedAt: typeof o.exportedAt === 'string' ? o.exportedAt : '', history, vocab, review, settings: isObj(o.settings) ? o.settings : undefined, fileSchema, hasHistory: isObj(rawHist), hasReview };
+  const hasLevelTest = fileSchema >= 4 && Array.isArray(o.levelTest);
+  const levelTest = hasLevelTest ? normalizeResults(o.levelTest) : [];
+  return { schema: BACKUP_SCHEMA, app: 'english-reader', exportedAt: typeof o.exportedAt === 'string' ? o.exportedAt : '', history, vocab, review, levelTest, settings: isObj(o.settings) ? o.settings : undefined, fileSchema, hasHistory: isObj(rawHist), hasReview, hasLevelTest };
 }
 
 /** One progress line per pool: read / total, counting only ids that exist in the current content. */

@@ -54,7 +54,7 @@ export function mountSettings(root: HTMLElement): () => void {
         toggle('读到文末自动标记为已读', 'autoMarkRead'),
         toggle('在正文中标出生词本里的词', 'highlightKnown', '淡淡的底色，已掌握的词不标'),
         h('div', { class: 'setting' }, h('div', { class: 'setting-label' }, '阅读记录'), historyBox),
-        h('div', { class: 'setting' }, h('div', { class: 'setting-label' }, '数据备份'), backupControls(), h('div', { class: 'muted small' }, '生词本、复习进度和阅读记录一起导出为一个 JSON 文件（含格式版本号）。导入时与本机数据合并，不会覆盖；也能导入旧版只含生词本的导出文件。'), backupLine),
+        h('div', { class: 'setting' }, h('div', { class: 'setting-label' }, '数据备份'), backupControls(), h('div', { class: 'muted small' }, '生词本、复习进度、阅读记录和自测记录一起导出为一个 JSON 文件（含格式版本号）。导入时与本机数据合并，不会覆盖；也能导入旧版只含生词本的导出文件。'), backupLine),
         h('div', { class: 'setting' }, h('div', { class: 'setting-label' }, '本地存储用量'), usageLine),
         h('div', { class: 'setting' }, h('div', { class: 'setting-label' }, '离线使用'), offlineLine),
         h('div', { class: 'setting' }, h('div', { class: 'setting-label' }, '版本'), versionLine, h('a', { href: '#/about' }, '关于与致谢（数据来源与许可）')),

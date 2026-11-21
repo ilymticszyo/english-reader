@@ -12,6 +12,7 @@ import { mountReader } from './views/reader.ts';
 import { mountSettings } from './views/settings.ts';
 import { mountWords } from './views/words.ts';
 import { mountReview } from './views/review.ts';
+import { mountLevelTest } from './views/leveltest.ts';
 
 applyAppearance();
 
@@ -22,6 +23,7 @@ const nav = h('nav', { class: 'topnav', 'aria-label': '主导航' },
     h('a', { href: '#/', dataset: { nav: 'list' } }, '文章'),
     h('a', { href: '#/classics', dataset: { nav: 'classics' } }, '名著'),
     h('a', { href: '#/words', dataset: { nav: 'words' } }, '生词本'),
+    h('a', { href: '#/level', dataset: { nav: 'level' }, title: '难度自测' }, '自测'),
     h('a', { href: '#/settings', dataset: { nav: 'settings' } }, '设置'),
     h('button', { class: 'iconbtn', type: 'button', id: 'nav-theme', 'aria-label': '切换主题', onclick: () => {
       const order = ['light', 'dark', 'system'] as const;
@@ -68,6 +70,7 @@ async function render() {
       c = await mountClassics(view);
     } else if (route.name === 'words') c = mountWords(view);
     else if (route.name === 'review') c = await mountReview(view, route.query);
+    else if (route.name === 'level') c = await mountLevelTest(view, route.query);
     else if (route.name === 'settings') c = mountSettings(view);
     else if (route.name === 'about') c = mountAbout(view);
     else {
@@ -81,7 +84,7 @@ async function render() {
   }
   if (my !== token) c(); // a newer navigation superseded us
   else cleanup = c;
-  if (route.name === 'words' || route.name === 'review' || route.name === 'settings' || route.name === 'about') window.scrollTo({ top: 0 });
+  if (route.name === 'words' || route.name === 'review' || route.name === 'level' || route.name === 'settings' || route.name === 'about') window.scrollTo({ top: 0 });
 }
 window.addEventListener('hashchange', render);
 render();
