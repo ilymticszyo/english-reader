@@ -11,6 +11,7 @@ import { mountList } from './views/list.ts';
 import { mountReader } from './views/reader.ts';
 import { mountSettings } from './views/settings.ts';
 import { mountWords } from './views/words.ts';
+import { mountReview } from './views/review.ts';
 
 applyAppearance();
 
@@ -52,7 +53,7 @@ async function render() {
   main.replaceChildren(view);
   const route = parseHash();
   for (const a of nav.querySelectorAll<HTMLElement>('[data-nav]')) {
-    const navOf = route.name === 'read' ? 'list' : route.name === 'classic' ? 'classics' : route.name;
+    const navOf = route.name === 'read' ? 'list' : route.name === 'classic' ? 'classics' : route.name === 'review' ? 'words' : route.name;
     const on = a.dataset.nav === navOf;
     a.classList.toggle('active', on);
     on ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current');
@@ -66,6 +67,7 @@ async function render() {
       window.scrollTo({ top: 0 });
       c = await mountClassics(view);
     } else if (route.name === 'words') c = mountWords(view);
+    else if (route.name === 'review') c = await mountReview(view, route.query);
     else if (route.name === 'settings') c = mountSettings(view);
     else if (route.name === 'about') c = mountAbout(view);
     else {
@@ -79,7 +81,7 @@ async function render() {
   }
   if (my !== token) c(); // a newer navigation superseded us
   else cleanup = c;
-  if (route.name === 'words' || route.name === 'settings' || route.name === 'about') window.scrollTo({ top: 0 });
+  if (route.name === 'words' || route.name === 'review' || route.name === 'settings' || route.name === 'about') window.scrollTo({ top: 0 });
 }
 window.addEventListener('hashchange', render);
 render();

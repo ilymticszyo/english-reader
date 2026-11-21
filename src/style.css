@@ -284,3 +284,53 @@ html[data-theme='dark'] .spoiler-note { background: #3d2c10; color: #ffcf7a; }
 @media (max-width: 560px) { .history-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .status.badge-read { background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--ok); border-radius: 6px; padding: 1px 7px; font-weight: 700; }
 .card-item.is-read .ci-title { color: var(--muted); }
+
+/* ---------- 生词复习 (#/review) ---------- */
+.due-banner { display: flex; align-items: center; gap: 12px; padding: 12px 16px; margin: 0 0 12px; border-radius: 12px; border: 1px solid var(--accent); background: var(--surface); color: var(--text); text-decoration: none; min-height: 44px; }
+.due-banner:hover { background: var(--accent-soft); }
+.due-banner.none { border-color: var(--border); }
+.due-banner[hidden] { display: none; }
+.due-icon { font-size: 1.4rem; }
+.due-main { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.due-go { color: var(--accent); font-weight: 600; white-space: nowrap; }
+.view-words .due-banner { margin-top: 4px; }
+.rv-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.rv-stage { display: flex; flex-direction: column; gap: 12px; max-width: 640px; margin: 0 auto; }
+.rv-card { border: 1px solid var(--border); border-radius: 16px; background: var(--surface); padding: 20px; min-height: 220px; display: flex; flex-direction: column; gap: 12px; box-shadow: 0 2px 10px rgb(0 0 0 / 0.05); }
+.rv-tags { display: flex; gap: 6px; align-items: center; }
+.badge.rv-new { background: color-mix(in srgb, var(--ok) 16%, transparent); color: var(--ok); }
+.badge.rv-due { background: var(--surface-2); color: var(--muted); }
+.rv-word-row { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 24px 0 8px; flex-wrap: wrap; }
+.rv-word { font-family: var(--serif, Georgia, serif); font-size: 2.4rem; line-height: 1.2; word-break: break-word; text-align: center; }
+.rv-card.flipped .rv-word-row { padding-top: 4px; }
+.rv-card.flipped .rv-word { font-size: 1.9rem; }
+.rv-notts { text-align: center; }
+.rv-back { border-top: 1px dashed var(--border); padding-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+.rv-back .phon { text-align: center; color: var(--muted); }
+.rv-defs { margin: 0; padding-left: 1.2em; }
+.rv-defs .pos { color: var(--muted); font-style: italic; }
+.rv-sentence { margin: 4px 0; padding: 8px 12px; border-left: 3px solid var(--accent); background: var(--surface-2); border-radius: 0 8px 8px 0; font-family: var(--serif, Georgia, serif); }
+.rv-sentence mark, .rv-more mark { background: var(--accent-soft); color: var(--accent); font-weight: 700; padding: 0 2px; border-radius: 3px; }
+.rv-source { display: inline-flex; align-items: center; min-height: 44px; }
+.rv-more summary { cursor: pointer; color: var(--accent); min-height: 32px; }
+.rv-more-item { margin: 6px 0; }
+.rv-master { align-self: flex-start; color: var(--muted); }
+.rv-actions { display: flex; justify-content: center; }
+.rv-actions .rv-flip { min-width: 60%; min-height: 52px; font-size: 1.05rem; }
+.rv-actions.grades { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.rv-grade { flex-direction: column; gap: 0; min-height: 60px; padding: 4px; line-height: 1.2; }
+.rv-g-iv { color: var(--muted); font-size: 0.78rem; }
+.rv-grade.g0 { border-color: var(--danger); color: var(--danger); }
+.rv-grade.g3 { border-color: var(--ok); color: var(--ok); }
+.rv-grade.g2 { border-color: var(--accent); color: var(--accent); }
+.rv-actions kbd { font-size: 0.7rem; color: var(--muted); border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; margin-left: 6px; }
+.rv-grade kbd { margin: 2px 0 0; }
+.rv-progress { text-align: center; }
+.rv-done { text-align: center; padding: 24px 8px; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.rv-done-title { font-size: 1.3rem; font-weight: 700; margin: 0; }
+.rv-help { max-width: 640px; margin: 16px auto 0; }
+.rv-filters select { flex: 1 1 140px; min-width: 0; max-width: 100%; }
+@media (hover: none) { .rv-actions kbd, .rv-help { display: none; } }
+@media (max-width: 340px) { .rv-actions.grades { grid-template-columns: repeat(2, minmax(0, 1fr)); } .rv-word { font-size: 2rem; } }
+/* phones: the grade buttons stay at the bottom of the screen while the back of the card scrolls (body has overflow-x: hidden, so sticky would not work) */
+@media (max-width: 640px) { .rv-actions.grades { position: fixed; left: 0; right: 0; bottom: 0; z-index: 5; background: var(--bg); padding: 8px 12px calc(8px + env(safe-area-inset-bottom)); box-shadow: 0 -4px 12px rgb(0 0 0 / 0.12); } .rv-stage.has-grades { padding-bottom: 84px; } .rv-card { padding: 16px; } }

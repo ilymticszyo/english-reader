@@ -248,7 +248,7 @@ try {
   await dl.saveAs(file);
   const backup = JSON.parse(readFileSync(file, 'utf8'));
   const vocabNow = await page.evaluate(() => JSON.parse(localStorage.getItem('ra:v1:vocab')));
-  check('export file: schema 2 + app + vocab + reading history (+ settings) in one JSON', backup.schema === 2 && backup.app === 'english-reader' && backup.vocab && backup.history && backup.settings && !('progress' in backup));
+  check('export file: schema 3 + app + vocab + reading history + review (+ settings) in one JSON', backup.schema === 3 && backup.review && backup.app === 'english-reader' && backup.vocab && backup.history && backup.settings && !('progress' in backup));
   check('export contains all vocab entries', JSON.stringify(Object.keys(backup.vocab).sort()) === JSON.stringify(Object.keys(vocabNow).sort()));
   check('download filename', /^english-reader-backup-\d{4}-\d{2}-\d{2}\.json$/.test(dl.suggestedFilename()), dl.suggestedFilename());
   // wipe then import: merging into an empty book restores identical data
@@ -412,7 +412,7 @@ try {
   const mig = await page.evaluate(() => ({ p: JSON.parse(localStorage.getItem('ra:v1:progress')), m: JSON.parse(localStorage.getItem('ra:v1:meta')), bak: localStorage.getItem('ra:v1:progress.bak-v1') }));
   check('H: migration keeps every old entry (status, scroll, updatedAt) keyed by article id', Object.entries(oldProgress).every(([id, o]) => mig.p[id] && mig.p[id].status === o.status && mig.p[id].scroll === o.scroll && mig.p[id].updatedAt === o.updatedAt) && Object.keys(mig.p).length === 4, JSON.stringify(mig.p));
   check('H: migration adds readAt to read entries only', mig.p['b1-001'].readAt === 1000 && mig.p['cl-002'].readAt === 4000 && !('readAt' in mig.p['b1-002']));
-  check('H: storage schema bumped to 2, untouched old copy kept in ra:v1:progress.bak-v1', mig.m.schema === 2 && mig.m.createdAt === 1 && JSON.stringify(JSON.parse(mig.bak)) === JSON.stringify(oldProgress), JSON.stringify(mig.m));
+  check('H: storage schema bumped (1 → 3), untouched old progress kept in ra:v1:progress.bak-v1', mig.m.schema === 3 && mig.m.createdAt === 1 && JSON.stringify(JSON.parse(mig.bak)) === JSON.stringify(oldProgress), JSON.stringify(mig.m));
   await page.reload();
   await page.waitForSelector('.card-item');
   check('H: migration runs once (reload leaves data identical)', isDeepStrictEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('ra:v1:progress'))), mig.p));
@@ -468,8 +468,8 @@ try {
   const [dlH] = await Promise.all([page.waitForEvent('download'), page.click('#export-btn')]);
   await dlH.saveAs('/tmp/er-history.json');
   const exH = JSON.parse(readFileSync('/tmp/er-history.json', 'utf8'));
-  check('H: export = one JSON with schema 2, reading history (with readAt) and vocab book', exH.schema === 2 && exH.app === 'english-reader' && exH.history['b1-001'].readAt === 1000 && exH.history['b1-003'].status === 'read' && exH.history['cl-002'].status === 'read' && 'go' in exH.vocab && Object.keys(exH.history).length === 5, Object.keys(exH.history).join());
-  check('H: export toast mentions words and reading history', /1 个生词和 5 条阅读记录/.test(await page.locator('.toast').last().innerText()));
+  check('H: export = one JSON with schema 3, reading history (with readAt) and vocab book', exH.schema === 3 && exH.app === 'english-reader' && exH.history['b1-001'].readAt === 1000 && exH.history['b1-003'].status === 'read' && exH.history['cl-002'].status === 'read' && 'go' in exH.vocab && Object.keys(exH.history).length === 5, Object.keys(exH.history).join());
+  check('H: export toast mentions words and reading history', /1 个生词、5 条阅读记录/.test(await page.locator('.toast').last().innerText()));
   const before = await page.evaluate(() => JSON.parse(localStorage.getItem('ra:v1:progress')));
   // old vocab-only export (0.1–0.5 era file without progress)
   writeFileSync('/tmp/er-old-vocab.json', JSON.stringify({ schema: 1, app: 'english-reader', exportedAt: '2026-01-02T03:04:05.000Z', settings: { theme: 'dark' }, vocab: { zebra: { addedAt: 1, lastAt: 2, count: 3, mastered: false, snap: { zh: 'n. 斑马' }, ctx: [] }, go: { addedAt: 0, lastAt: 9, count: 4, mastered: false, snap: { zh: 'vi. 去' }, ctx: [] } } }));
@@ -521,11 +521,246 @@ try {
   await page.click('#import-merge');
   await page.waitForTimeout(150);
   check('H: export → wipe → import restores history and vocab exactly', isDeepStrictEqual(await page.evaluate(() => ({ p: JSON.parse(localStorage.getItem('ra:v1:progress')), v: JSON.parse(localStorage.getItem('ra:v1:vocab')) })), snap));
-  writeFileSync('/tmp/er-v3.json', JSON.stringify({ ...exH, schema: 3 }));
+  writeFileSync('/tmp/er-v3.json', JSON.stringify({ ...exH, schema: 4 }));
   await page.setInputFiles('#import-file', '/tmp/er-v3.json');
   await page.waitForTimeout(200);
-  check('H: newer schema (3) rejected with a message, nothing changed', /schema 版本（3）/.test(await page.locator('.toast').last().innerText()) && (await page.locator('#import-dialog').count()) === 0);
+  check('H: newer schema (4) rejected with a message, nothing changed', /schema 版本（4）/.test(await page.locator('.toast').last().innerText()) && (await page.locator('#import-dialog').count()) === 0);
   check('H: no console errors in reading-history flows', page.errors.length === 0, page.errors.join('; '));
+  await page.context().close();
+  }
+
+  // ------------------------------------------------------------ vocabulary review (生词复习)
+  section('R: vocabulary review (生词复习): migration 2 → 3, due count, flashcards, grading, filters, export / import');
+  {
+  page = await newPage();
+  await page.goto(url);
+  await page.waitForSelector('.card-item');
+  const localDay = (off = 0) => page.evaluate((o) => { const d = new Date(Date.now() + o * 864e5); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); }, off);
+  const TODAY = await localDay(0), YDAY = await localDay(-1), TMRW = await localDay(1);
+  const cx = (a, p, s, form) => ({ a, v: 1, p, s, form, at: 1 });
+  const W = (o) => ({ addedAt: 1, lastAt: 1, count: 1, mastered: false, snap: {}, ctx: [], ...o });
+  const rvVocab = {
+    market: W({ addedAt: 1, snap: { p: "'mɑ:kit", zh: 'n. 市场', cefr: 'A1' }, ctx: [cx('b1-002', 1, 'On Saturday morning I went to the market.', 'market')] }),
+    soup: W({ addedAt: 2, snap: { zh: 'n. 汤', cefr: 'A1' }, ctx: [cx('b1-002', 0, 'For a week I had looked at recipes online, and in the end I chose a simple menu: tomato soup, chicken with rice, and a fruit cake.', 'soup'), cx('b1-002', 4, 'The soup was a bit too salty, but everyone said it was good.', 'soup')] }),
+    manuscript: W({ addedAt: 3, snap: { zh: 'n. 手稿', cefr: 'C1' }, ctx: [cx('c1-003', 0, 'Printing did not instantly replace manuscripts, nor did it immediately make books affordable to ordinary people.', 'manuscripts')] }),
+    yonder: W({ addedAt: 4, snap: { zh: 'adv. 那边' }, ctx: [cx('cl-030', 3, 'Nothing will content them but the extremest limit of the land; loitering under the shady lee of yonder warehouses will not suffice.', 'yonder')] }),
+    stale: W({ addedAt: 5, snap: { zh: 'adj. 不新鲜的', cefr: 'B2' } }),
+    go: W({ mastered: true, snap: { zh: 'vi. 去' } }),
+  };
+  const rvReview = { market: { due: YDAY, interval: 3, ease: 2.5, reps: 2, lapses: 0, lastGrade: 2, updatedAt: 1000, firstDay: '2026-11-01' }, orphanword: { due: YDAY, interval: 1, ease: 2.5, reps: 1, lapses: 0, lastGrade: 2, updatedAt: 1000 } };
+  const oldMeta = { schema: 2, createdAt: 1, lastBackupAt: 5 };
+  const oldProg = { 'b1-001': { status: 'read', scroll: 1, updatedAt: 1000, readAt: 1000 } };
+  // a 0.6.0 user (storage schema 2) who somehow already has a review key with an orphan record
+  await page.evaluate(([m, p, v, r]) => { localStorage.clear(); localStorage.setItem('ra:v1:meta', JSON.stringify(m)); localStorage.setItem('ra:v1:progress', JSON.stringify(p)); localStorage.setItem('ra:v1:vocab', JSON.stringify(v)); localStorage.setItem('ra:v1:review', JSON.stringify(r)); }, [oldMeta, oldProg, rvVocab, rvReview]);
+  await page.reload();
+  await page.waitForSelector('.card-item');
+  const st = () => page.evaluate(() => ({ meta: JSON.parse(localStorage.getItem('ra:v1:meta')), review: JSON.parse(localStorage.getItem('ra:v1:review') || 'null'), vocab: JSON.parse(localStorage.getItem('ra:v1:vocab')), progress: JSON.parse(localStorage.getItem('ra:v1:progress')), metaBak: localStorage.getItem('ra:v1:meta.bak-v2'), progBak2: localStorage.getItem('ra:v1:progress.bak-v2') }));
+  let s0 = await st();
+  check('R: storage schema 2 → 3, old meta kept in ra:v1:meta.bak-v2, progress + vocab untouched', s0.meta.schema === 3 && s0.meta.lastBackupAt === 5 && isDeepStrictEqual(JSON.parse(s0.metaBak), oldMeta) && isDeepStrictEqual(s0.progress, oldProg) && isDeepStrictEqual(s0.vocab, rvVocab) && s0.progBak2 === null, JSON.stringify(s0.meta));
+  check('R: review store keyed by word; orphan record (word not in vocab) pruned on load', isDeepStrictEqual(s0.review, { market: rvReview.market }), JSON.stringify(s0.review));
+  // a 0.6.0 user without any review key gets an empty one
+  {
+    const p2 = await newPage();
+    await p2.goto(url);
+    await p2.evaluate(() => { localStorage.clear(); localStorage.setItem('ra:v1:meta', JSON.stringify({ schema: 2, createdAt: 1 })); localStorage.setItem('ra:v1:vocab', JSON.stringify({ go: { addedAt: 1, lastAt: 1, count: 1, mastered: false, snap: {}, ctx: [] } })); });
+    await p2.reload();
+    await p2.waitForSelector('.card-item');
+    const m2 = await p2.evaluate(() => ({ m: JSON.parse(localStorage.getItem('ra:v1:meta')), r: localStorage.getItem('ra:v1:review') }));
+    check('R: migration without review data → ra:v1:review = {} and schema 3; due banner shows the new word', m2.m.schema === 3 && m2.r === '{}' && /今日待复习 1 个/.test(await p2.locator('#due-home').innerText()));
+    await p2.context().close();
+  }
+  // due count on the home page: 1 due review (market) + 4 new words (mastered "go" excluded)
+  const homeTxt = await page.locator('#due-home').innerText();
+  check('R: home page shows 「今日待复习 5 个」 (1 due + 4 new; mastered word excluded)', /今日待复习 5 个/.test(homeTxt) && /到期 1 · 新词 4/.test(homeTxt), homeTxt);
+  check('R: due banner links into the review page', (await page.locator('#due-home').getAttribute('href')) === '#/review');
+  await page.goto(url + '#/words');
+  await page.waitForSelector('#due-words');
+  check('R: vocab page shows the same due count', /今日待复习 5 个/.test(await page.locator('#due-words').innerText()));
+  await page.click('#due-words');
+  await page.waitForSelector('.rv-card');
+  check('R: banner opens #/review, nav highlights 生词本', page.url().endsWith('#/review') && (await page.locator('.navlinks a.active').getAttribute('data-nav')) === 'words');
+  // front
+  check('R: due reviews come first (market), front shows the word only', (await page.locator('.rv-card').getAttribute('data-word')) === 'market' && (await page.locator('.rv-card').getAttribute('data-side')) === 'front' && (await page.locator('.rv-back').count()) === 0 && (await page.locator('.rv-grade').count()) === 0);
+  await page.click('.rv-speak');
+  check('R: speak button reads the word (Web Speech API)', await page.evaluate(() => window.__spoken.some((x) => x.text === 'market')));
+  // flip with the keyboard
+  await page.keyboard.press('Space');
+  await page.waitForSelector('.rv-back');
+  await page.waitForFunction(() => !/词典加载中/.test(document.querySelector('.rv-defs').textContent));
+  const backTxt = await page.locator('.rv-back').innerText();
+  check('R: Space flips: definition (dictionary) + original sentence with the word marked', (await page.locator('.rv-card').getAttribute('data-side')) === 'back' && /市场|集市/.test(backTxt) && (await page.locator('.rv-sentence mark').innerText()) === 'market' && /went to the market/.test(await page.locator('.rv-sentence').innerText()), backTxt.slice(0, 200));
+  check('R: back links to the source article by title', (await page.locator('.rv-source').innerText()) === '出自：Cooking for Friends for the First Time' && /^#\/read\/b1-002\?p=1&s=/.test(await page.locator('.rv-source').getAttribute('href')));
+  const gradeTxt = await page.locator('.rv-grade').allInnerTexts();
+  check('R: 4 grades 忘了/模糊/记得/简单 with next intervals (reps 2, interval 3, ease 2.5 → 4 / 8 / 10 days)', gradeTxt.length === 4 && /忘了[\s\S]*本轮再来/.test(gradeTxt[0]) && /模糊[\s\S]*4 天/.test(gradeTxt[1]) && /记得[\s\S]*8 天/.test(gradeTxt[2]) && /简单[\s\S]*10 天/.test(gradeTxt[3]), gradeTxt.join(' | '));
+  await page.keyboard.press('3');
+  await page.waitForFunction(() => document.querySelector('.rv-card')?.dataset.word !== 'market');
+  let rv = (await st()).review;
+  check('R: key 3 (记得) reschedules: interval 8, due today+8, reps 3, ease 2.5, lastGrade 2', rv.market.interval === 8 && rv.market.due === (await localDay(8)) && rv.market.reps === 3 && rv.market.ease === 2.5 && rv.market.lastGrade === 2 && rv.market.updatedAt > 1000 && rv.market.firstDay === '2026-11-01', JSON.stringify(rv.market));
+  check('R: summary count drops to 4 after grading', /今日待复习 4 个/.test(await page.locator('#rv-summary').innerText()), await page.locator('#rv-summary').innerText());
+  // new words next, oldest saved first: soup
+  check('R: then new words, oldest saved first (soup)', (await page.locator('.rv-card').getAttribute('data-word')) === 'soup' && /新词/.test(await page.locator('.rv-tags').innerText()));
+  await page.click('#rv-flip');
+  check('R: several saved sentences → first shown, others folded', (await page.locator('.rv-more summary').innerText()) === '其他例句（1）');
+  await page.click('.rv-grade[data-g="0"]');
+  rv = (await st()).review;
+  check('R: 忘了 on a new card: due today, interval 0, reps 0, ease 2.3, no lapse counted, firstDay today', rv.soup.due === TODAY && rv.soup.interval === 0 && rv.soup.reps === 0 && rv.soup.ease === 2.3 && rv.soup.lapses === 0 && rv.soup.firstDay === TODAY, JSON.stringify(rv.soup));
+  check('R: forgotten card stays in today\'s count and comes back later in the session', /今日待复习 4 个/.test(await page.locator('#rv-summary').innerText()) && /本轮剩余 4 个/.test(await page.locator('#rv-progress').innerText()), await page.locator('#rv-progress').innerText());
+  // manuscript (C1 article): grade 简单 by mouse
+  check('R: next card manuscript', (await page.locator('.rv-card').getAttribute('data-word')) === 'manuscript');
+  await page.click('#rv-flip');
+  check('R: the saved inflected form is marked in the sentence (manuscripts)', (await page.locator('.rv-sentence mark').innerText()) === 'manuscripts' && /The Long Shadow of the Printing Press/.test(await page.locator('.rv-source').innerText()));
+  await page.keyboard.press('4');
+  rv = (await st()).review;
+  check('R: 简单 on a new card → 4 days, ease 2.65', rv.manuscript.interval === 4 && rv.manuscript.due === (await localDay(4)) && rv.manuscript.ease === 2.65);
+  // yonder (classics) → back has the classics title
+  await page.keyboard.press('Space');
+  check('R: classics word links to the excerpt (Moby-Dick)', (await page.locator('.rv-card').getAttribute('data-word')) === 'yonder' && /Moby-Dick/.test(await page.locator('.rv-source').innerText()) && /^#\/classics\/cl-030\?/.test(await page.locator('.rv-source').getAttribute('href')));
+  await page.keyboard.press('2');
+  // stale: no saved sentence
+  await page.keyboard.press('Space');
+  check('R: word without a saved sentence still reviews (note shown)', (await page.locator('.rv-card').getAttribute('data-word')) === 'stale' && /没有保存原文例句/.test(await page.locator('.rv-ctx').innerText()));
+  // mastered from the review card, with undo
+  await page.click('.rv-master');
+  check('R: 已经掌握 marks the word mastered and leaves the queue', (await st()).vocab.stale.mastered === true && (await page.locator('.rv-card').getAttribute('data-word')) === 'soup');
+  await page.click('.toast-act');
+  check('R: undo brings it back', (await st()).vocab.stale.mastered === false && (await page.locator('.rv-card').getAttribute('data-word')) === 'stale');
+  await page.keyboard.press('Space');
+  await page.keyboard.press('3');
+  // soup again (forgotten earlier) → 记得
+  check('R: forgotten card comes back at the end of the session', (await page.locator('.rv-card').getAttribute('data-word')) === 'soup');
+  await page.keyboard.press('Space');
+  await page.keyboard.press('3');
+  rv = (await st()).review;
+  check('R: relearned after 忘了 → 1 day', rv.soup.interval === 1 && rv.soup.due === TMRW && rv.soup.reps === 1);
+  await page.waitForSelector('#rv-done');
+  const doneTxt = await page.locator('#rv-done').innerText();
+  check('R: session done screen with tally (6 reviews: 忘了 1 · 模糊 1 · 记得 3 · 简单 1)', /本轮复习完成/.test(doneTxt) && /共复习 6 次：忘了 1 · 模糊 1 · 记得 3 · 简单 1/.test(doneTxt) && /下一次复习：/.test(doneTxt), doneTxt);
+  check('R: due count now 0 (summary)', /今日待复习 0 个/.test(await page.locator('#rv-summary').innerText()));
+  await page.goto(url);
+  await page.waitForSelector('#due-home');
+  check('R: home banner shows 0 and "done"', /今日待复习 0 个/.test(await page.locator('#due-home').innerText()) && /已全部完成/.test(await page.locator('#due-home').innerText()));
+  // the next day (fake clock): yonder (模糊 → 1 day) and soup + stale (1 day) are due
+  {
+    const p3 = await newPage();
+    const state = await st();
+    await p3.clock.setFixedTime(new Date(Date.now() + 864e5));
+    await p3.goto(url);
+    await p3.evaluate((x) => { localStorage.clear(); for (const k of ['meta', 'vocab', 'review', 'progress']) localStorage.setItem('ra:v1:' + k, JSON.stringify(x[k])); }, state);
+    await p3.reload();
+    await p3.waitForSelector('#due-home');
+    check('R: next day: cards graded 1 day come back (soup, yonder, stale = 3)', /今日待复习 3 个/.test(await p3.locator('#due-home').innerText()), await p3.locator('#due-home').innerText());
+    await p3.context().close();
+  }
+  // timezone-safe "today": the same instant is already 11-22 in Shanghai but still 11-21 in New York
+  for (const [tz, n] of [['Asia/Shanghai', 1], ['America/New_York', 0]]) {
+    const p4 = await newPage({ timezoneId: tz });
+    await p4.clock.setFixedTime(new Date('2026-11-21T16:30:00Z'));
+    await p4.goto(url);
+    await p4.evaluate(() => { localStorage.clear(); localStorage.setItem('ra:v1:meta', JSON.stringify({ schema: 3, createdAt: 1 })); localStorage.setItem('ra:v1:vocab', JSON.stringify({ go: { addedAt: 1, lastAt: 1, count: 1, mastered: false, snap: {}, ctx: [] } })); localStorage.setItem('ra:v1:review', JSON.stringify({ go: { due: '2026-11-22', interval: 1, ease: 2.5, reps: 1, lapses: 0, lastGrade: 2, updatedAt: 1 } })); });
+    await p4.reload();
+    await p4.waitForSelector('#due-home');
+    check(`R: local-day due (${tz}, 2026-11-21 16:30 UTC): card due 2026-11-22 → ${n} due`, new RegExp(`今日待复习 ${n} 个`).test(await p4.locator('#due-home').innerText()));
+    await p4.context().close();
+  }
+  // filters
+  await page.evaluate((r) => { localStorage.setItem('ra:v1:review', JSON.stringify(r)); }, { market: { ...rvReview.market } });
+  await page.goto(url + '#/review?pool=classics');
+  await page.reload();
+  await page.waitForSelector('.rv-card');
+  check('R: filter 来源 = 名著 (URL ?pool=classics): only the classics word', (await page.locator('#rv-pool').inputValue()) === 'classics' && (await page.locator('.rv-card').getAttribute('data-word')) === 'yonder' && /本轮剩余 1 个/.test(await page.locator('#rv-progress').innerText()) && /当前筛选下 1 个/.test(await page.locator('#rv-summary').innerText()));
+  check('R: article filter lists only texts from the chosen source', isDeepStrictEqual(await page.locator('#rv-article option').evaluateAll((os) => os.map((o) => o.value)), ['', 'cl-030']));
+  await page.selectOption('#rv-pool', '');
+  await page.selectOption('#rv-cefr', 'C1');
+  check('R: filter 词汇等级 = C1: only manuscript; URL updated', (await page.locator('.rv-card').getAttribute('data-word')) === 'manuscript' && /本轮剩余 1 个/.test(await page.locator('#rv-progress').innerText()) && page.url().endsWith('#/review?cefr=C1'));
+  await page.selectOption('#rv-cefr', '');
+  const artOpts = await page.locator('#rv-article option').allInnerTexts();
+  check('R: article filter options show titles', artOpts.some((t) => t === 'b1-002 Cooking for Friends for the First Time') && artOpts.some((t) => /^cl-030 Moby-Dick/.test(t)), artOpts.join(' | '));
+  await page.selectOption('#rv-article', 'b1-002');
+  check('R: filter 文章 = b1-002: market (due) then soup, URL ?a=b1-002', (await page.locator('.rv-card').getAttribute('data-word')) === 'market' && /本轮剩余 2 个/.test(await page.locator('#rv-progress').innerText()) && page.url().endsWith('#/review?a=b1-002'));
+  await page.selectOption('#rv-cefr', 'B2');
+  check('R: filters combine (AND); none left → message + 清除筛选', (await page.locator('.rv-card').count()) === 0 && /当前筛选下没有生词/.test(await page.locator('#rv-done').innerText()));
+  await page.click('#rv-clear');
+  check('R: 清除筛选 restores the full queue', /本轮剩余 5 个/.test(await page.locator('#rv-progress').innerText()) && page.url().endsWith('#/review'));
+  await page.selectOption('#rv-cefr', '-');
+  check('R: 无等级 filter: words without a CEFR level (yonder)', (await page.locator('.rv-card').getAttribute('data-word')) === 'yonder');
+  await page.selectOption('#rv-cefr', '');
+  // source link → article with the sentence highlighted
+  await page.click('#rv-flip');
+  await page.click('.rv-source');
+  await page.waitForSelector('.article-body .w.flash');
+  check('R: 出处 link opens the article and highlights the sentence', page.url().includes('#/read/b1-002') && (await page.locator('.w.flash').count()) >= 5);
+  // removing a word deletes its review record; undo restores it
+  await page.goto(url + '#/words');
+  await page.waitForSelector('.vocab-row[data-word="market"]');
+  await page.locator('.vocab-row[data-word="market"] .remove-btn').click();
+  check('R: removing a word from the vocab book removes its review record (no orphan due card)', !('market' in (await st()).review) && /今日待复习 4 个/.test(await page.locator('#due-words').innerText()));
+  await page.click('.toast-act');
+  check('R: undo restores the word and its schedule', isDeepStrictEqual((await st()).review.market, rvReview.market) && /今日待复习 5 个/.test(await page.locator('#due-words').innerText()));
+  // export schema 3
+  await page.evaluate(() => { const r = JSON.parse(localStorage.getItem('ra:v1:review')); r.orphan2 = { due: '2026-01-01', interval: 1, ease: 2.5, reps: 1, lapses: 0, lastGrade: 2, updatedAt: 1 }; localStorage.setItem('ra:v1:review', JSON.stringify(r)); });
+  await page.reload();
+  await page.waitForSelector('.vocab-row');
+  const [dlR] = await Promise.all([page.waitForEvent('download'), page.click('#export-btn')]);
+  await dlR.saveAs('/tmp/er-review.json');
+  const exR = JSON.parse(readFileSync('/tmp/er-review.json', 'utf8'));
+  check('R: export = schema 3 with review keyed by word (orphans left out) + history + vocab', exR.schema === 3 && exR.app === 'english-reader' && isDeepStrictEqual(exR.review, { market: rvReview.market }) && exR.history['b1-001'] && exR.vocab.market && !('orphan2' in exR.review), JSON.stringify(exR.review));
+  check('R: export toast mentions review records', /1 条复习记录/.test(await page.locator('.toast').last().innerText()), await page.locator('.toast').last().innerText());
+  // import schema 3: newer record from the file wins, older loses, new words + records added
+  const newer = { ...rvReview.market, due: '2027-02-01', interval: 60, reps: 6, updatedAt: Date.now() + 1000 };
+  writeFileSync('/tmp/er-review-in.json', JSON.stringify({ ...exR, exportedAt: new Date().toISOString(), vocab: { ...exR.vocab, kettle: W({ snap: { zh: 'n. 水壶' } }) }, review: { market: newer, kettle: { due: TMRW, interval: 1, ease: 2.5, reps: 1, lapses: 0, lastGrade: 2, updatedAt: 5 }, ghost: { due: YDAY, interval: 1, ease: 2.5, reps: 1, lapses: 0, lastGrade: 2, updatedAt: 5 } } }));
+  await page.setInputFiles('#import-file', '/tmp/er-review-in.json');
+  await page.waitForSelector('#import-dialog');
+  check('R: import dialog (schema 3) mentions review records', /3 条复习记录/.test(await page.locator('#import-summary').innerText()) && /备份格式 v3/.test(await page.locator('#import-dialog').innerText()), await page.locator('#import-summary').innerText());
+  await page.click('#import-merge');
+  await page.waitForTimeout(100);
+  let s1 = await st();
+  check('R: schema 3 import merges review: newer file record wins, new word + record added, record without a word dropped', isDeepStrictEqual(s1.review.market, newer) && s1.review.kettle?.reps === 1 && 'kettle' in s1.vocab && !('ghost' in s1.review) && !('orphan2' in s1.review), JSON.stringify(Object.keys(s1.review)));
+  check('R: import toast counts review records', /新增 1 条、更新 1 条复习记录/.test(await page.locator('.toast').last().innerText()), await page.locator('.toast').last().innerText());
+  writeFileSync('/tmp/er-review-old.json', JSON.stringify({ ...exR, review: { market: { ...rvReview.market, updatedAt: 10 } } }));
+  await page.setInputFiles('#import-file', '/tmp/er-review-old.json');
+  await page.waitForSelector('#import-dialog');
+  await page.click('#import-merge');
+  await page.waitForTimeout(100);
+  check('R: an older record in the file does not overwrite the newer local one', isDeepStrictEqual((await st()).review.market, newer));
+  // import schema 2 (0.6.0 export, no review) and a v1 vocab-only file: still merge, review untouched
+  const rvBefore = (await st()).review;
+  writeFileSync('/tmp/er-review-s2.json', JSON.stringify({ schema: 2, app: 'english-reader', exportedAt: '2026-11-19T00:00:00.000Z', history: { 'b2-005': { status: 'read', scroll: 1, updatedAt: 5, readAt: 5 } }, vocab: { lantern: W({ snap: { zh: 'n. 灯笼' } }), market: W({ count: 9 }) }, settings: {} }));
+  await page.setInputFiles('#import-file', '/tmp/er-review-s2.json');
+  await page.waitForSelector('#import-dialog');
+  check('R: schema 2 file: dialog says no review records', /没有复习记录/.test(await page.locator('#import-summary').innerText()) && /备份格式 v2/.test(await page.locator('#import-dialog').innerText()));
+  await page.click('#import-merge');
+  await page.waitForTimeout(100);
+  s1 = await st();
+  check('R: schema 2 import merges vocab + history, review data unchanged, new word becomes a new card', 'lantern' in s1.vocab && s1.vocab.market.count === 9 && s1.progress['b2-005']?.status === 'read' && isDeepStrictEqual(s1.review, rvBefore) && /新词/.test(await page.locator('#due-words').innerText()));
+  writeFileSync('/tmp/er-review-v1.json', JSON.stringify({ schema: 1, app: 'english-reader', exportedAt: '2026-01-01T00:00:00.000Z', vocab: { quill: W({ snap: { zh: 'n. 羽毛笔' } }) } }));
+  await page.setInputFiles('#import-file', '/tmp/er-review-v1.json');
+  await page.waitForSelector('#import-dialog');
+  await page.click('#import-merge');
+  await page.waitForTimeout(100);
+  s1 = await st();
+  check('R: v1 vocab-only import merges, review data unchanged', 'quill' in s1.vocab && 'lantern' in s1.vocab && isDeepStrictEqual(s1.review, rvBefore));
+  writeFileSync('/tmp/er-review-bare.json', JSON.stringify({ inkwell: W({ snap: { zh: 'n. 墨水瓶' } }) }));
+  await page.setInputFiles('#import-file', '/tmp/er-review-bare.json');
+  await page.waitForSelector('#import-dialog');
+  await page.click('#import-merge');
+  await page.waitForTimeout(100);
+  check('R: bare vocab map (no schema) still imports', 'inkwell' in (await st()).vocab);
+  check('R: no console errors in review flows', page.errors.length === 0, page.errors.join('; '));
+  await page.context().close();
+  // mobile layout
+  page = await newPage({ viewport: { width: 375, height: 667 }, isMobile: true, hasTouch: true });
+  await page.goto(url);
+  await page.evaluate((v) => { localStorage.clear(); localStorage.setItem('ra:v1:vocab', JSON.stringify(v)); }, rvVocab);
+  await page.goto(url + '#/review');
+  await page.reload();
+  await page.waitForSelector('.rv-card');
+  await page.tap('#rv-flip');
+  await page.waitForSelector('.rv-grade');
+  const mb = await page.evaluate(() => ({ over: document.documentElement.scrollWidth > window.innerWidth, h: Math.min(...[...document.querySelectorAll('.rv-grade')].map((b) => b.getBoundingClientRect().height)), rows: new Set([...document.querySelectorAll('.rv-grade')].map((b) => Math.round(b.getBoundingClientRect().top))).size }));
+  check('R: mobile (375px): no horizontal scroll, 4 grade buttons in one row, ≥ 44px tall', !mb.over && mb.h >= 44 && mb.rows === 1, JSON.stringify(mb));
+  await page.tap('.rv-grade[data-g="2"]');
+  check('R: mobile: tap grades the card', (await page.evaluate(() => Object.keys(JSON.parse(localStorage.getItem('ra:v1:review'))).length)) === 1);
+  check('R: no console errors on mobile review', page.errors.length === 0, page.errors.join('; '));
   await page.context().close();
   }
 
@@ -1039,6 +1274,13 @@ try {
     check(`${label}: offline reading history: mark read → badge, 只看未读, 名著 1 / ${NCL}`, (await page.locator('.classic-card').count()) === NCL - 1 && /已读 1 \/ 100/.test(await page.locator('.hs-row[data-k="classics"]').innerText()) && (await page.evaluate(() => JSON.parse(localStorage.getItem('ra:v1:progress'))['cl-030'].readAt > 0)));
     await page.uncheck('#cl-only-unread');
     check(`${label}: offline read badge on the classic`, (await page.locator('.classic-card[data-id="cl-030"] .badge-read').count()) === 1);
+    await page.goto(base + '#/review');
+    await page.waitForSelector('.rv-card');
+    const offW = await page.locator('.rv-card').getAttribute('data-word');
+    await page.keyboard.press('Space');
+    await page.waitForFunction(() => document.querySelector('.rv-defs') && !/词典加载中|词典未收录/.test(document.querySelector('.rv-defs').textContent));
+    await page.keyboard.press('3');
+    check(`${label}: offline review page works (flip shows the definition, grading is saved)`, (await page.evaluate((w) => JSON.parse(localStorage.getItem('ra:v1:review'))[w]?.reps === 1, offW)) && /今日待复习/.test(await page.locator('#rv-summary').innerText()), offW);
     await page.goto(base + '#/settings');
     await page.waitForSelector('#offline');
     await page.waitForFunction(() => /已缓存/.test(document.querySelector('#offline').textContent), null, { timeout: 5000 });
@@ -1046,7 +1288,7 @@ try {
     const [dlO] = await Promise.all([page.waitForEvent('download'), page.click('#export-btn')]);
     await dlO.saveAs('/tmp/er-offline.json');
     const exO = JSON.parse(readFileSync('/tmp/er-offline.json', 'utf8'));
-    check(`${label}: offline export includes the reading history (schema 2)`, exO.schema === 2 && exO.history['cl-030']?.status === 'read' && (await page.locator('#settings-history .hs-row').count()) === 4);
+    check(`${label}: offline export includes the reading history + review (schema 3)`, exO.schema === 3 && Object.keys(exO.review).length >= 1 && exO.history['cl-030']?.status === 'read' && (await page.locator('#settings-history .hs-row').count()) === 4);
     await page.context().setOffline(false);
     await page.context().close();
   }

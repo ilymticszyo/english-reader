@@ -75,9 +75,34 @@ npm run screenshots
 - **进度**：文章列表、名著列表和设置页都显示四条进度线：B1、B2、C1、名著（已读 X / 100）。只统计当前内容里存在的 ID。
 - **阅读位置**：在读的文章/选段记住滚动位置（正文的比例，不是像素），重新打开时恢复。
 - **存储**：仍是 `localStorage` 的 `ra:v1:progress`，按文章 ID（`b1-001` / `cl-001` …）为键：`{ status: 'unread'|'reading'|'read', scroll: 0..1, updatedAt, readAt? }`。`readAt` 是读完的时间，改回未读时删除。`ra:v1:meta.schema` 从 1 升到 2：旧数据在首次加载时原地迁移（保留所有条目和未知字段，已读条目补 `readAt = updatedAt`），迁移前的原值另存一份在 `ra:v1:progress.bak-v1`。
-- **导出**：一个 JSON 文件 `{ schema: 2, app: 'english-reader', exportedAt, history, vocab, settings }`——`history` 就是上面的阅读记录，`vocab` 是生词本。
-- **导入**：只合并，不覆盖。生词按原规则合并（次数取大、例句合并、两边都掌握才算掌握）；阅读记录逐篇取较新的那次改动（所以另一台设备上「改回未读」也会生效），同一时间则取更靠后的状态，`readAt` 取最早。设置不导入。兼容旧文件：schema 1（`progress` 字段或只有 `vocab`）、没有 schema 的 `{ vocab }` 或裸生词本对象；schema 高于 2 的文件会被拒绝并提示更新。
+- **导出**：一个 JSON 文件 `{ schema: 2, app: 'english-reader', exportedAt, history, vocab, settings }`——`history` 就是上面的阅读记录，`vocab` 是生词本。（0.7.0 起为 schema 3，多一个 `review`，见下节。）
+- **导入**：只合并，不覆盖。生词按原规则合并（次数取大、例句合并、两边都掌握才算掌握）；阅读记录逐篇取较新的那次改动（所以另一台设备上「改回未读」也会生效），同一时间则取更靠后的状态，`readAt` 取最早。设置不导入。兼容旧文件：schema 1（`progress` 字段或只有 `vocab`）、没有 schema 的 `{ vocab }` 或裸生词本对象；schema 高于当前版本（0.7.0 起为 3）的文件会被拒绝并提示更新。
 - 纯逻辑在 `src/shared/history.ts`，单元测试 `scripts/test-unit.ts`；截图 `node scripts/screenshots-history.mjs` → `screenshots/history-*.png`。
+
+## 生词复习（0.7.0，#/review）
+
+- **入口**：首页（文章列表）和生词本页都有「今日待复习 N 个」（到期 X · 新词 Y），点进 `#/review`。导航仍高亮「生词本」。
+- **闪卡**：正面只有单词 + 🔊 朗读（Web Speech API；浏览器不支持时不显示按钮，并提示“当前浏览器不支持朗读”）。翻面显示音标、词典释义（最多 5 条，词典没加载完时先用收词时的快照）、收词时的原文例句（收词时点的词形高亮），以及「出自：文章标题」链接，回到原文并高亮那句；有多条例句时其余折叠。翻面后还可以点「已经掌握，不再复习」（可撤销）。
+- **评分**：忘了 / 模糊 / 记得 / 简单，按钮上显示下次间隔。快捷键：空格（或回车）翻面，1–4 评分。手机上评分按钮固定在屏幕底部。
+- **排期（简化 SM-2，按天）**：初始 ease 2.5，范围 1.3–3.0；忘了 −0.2、模糊 −0.15、记得 ±0、简单 +0.15。
+  - 新词（或刚忘记的词）：忘了 → 今天（本轮稍后再出现一次），模糊 / 记得 → 1 天，简单 → 4 天；
+  - 第二次答对：模糊 2、记得 3、简单 6 天；
+  - 之后：模糊 = 上次 × 1.2，记得 = 上次 × ease，简单 = 上次 × ease × 1.3（都至少比上次多 1 天，上限 365 天）；
+  - 忘了（遗忘）：reps 清零、`lapses` +1（新词第一次就忘不算遗忘），重新从 1 天开始。
+  - 新间隔从实际复习那天算起（拖延复习不会让间隔虚涨）。
+- **“今天”按本地日历日**：`due` 存成本地日期 `YYYY-MM-DD`（不是时间戳），到本地零点才算到期；换时区或夏令时不会让卡片提前或推迟几个小时。
+- **今日待复习** = 已到期的复习卡（不限数量，最早到期的先出）+ 还没复习过的新词（最早收录的先出，每天最多引入 20 个新词）。已掌握的词不复习、不计数。
+- **筛选**（写在 URL 里，可以收藏：`#/review?pool=B1&cefr=B2&a=b1-002`；三项同时生效）：
+  - 来源 `pool`：B1 / B2 / C1 文章、名著——词的任意一条例句来自该处即算；没有例句的词只在「全部来源」里；
+  - 词汇等级 `cefr`：A1–C2 或「无等级」（词典里这个词本身的 CEFR）；
+  - 文章 `a`：某一篇文章 / 名著选段（下拉列表只列出当前来源下、出现在未掌握生词例句里的文章，带标题）。
+  - 新词每日上限是全局的（不同筛选共用）。
+- **存储**：`localStorage` 的 `ra:v1:review`，按生词本的词为键：`{ due: 'YYYY-MM-DD', interval, ease, reps, lapses, lastGrade: 0..3, updatedAt, firstDay? }`（`firstDay` 是第一次复习的日期，用于新词每日上限）。生词本里没有复习记录的词就是新词。
+  - `ra:v1:meta.schema` 从 2 升到 3：只新增 `ra:v1:review`（已有的保留），生词本和阅读记录不变；升级前的 meta 另存在 `ra:v1:meta.bak-v2`。从 schema 1 升级的仍会先做阅读记录迁移并留 `ra:v1:progress.bak-v1`。
+  - 从生词本移除一个词会同时删除它的复习记录（「撤销」会连复习进度一起恢复）；加载、导入、导出时都会清掉生词本里已没有的词的复习记录，所以不会留下孤立的待复习卡。标为「已掌握」的词保留复习记录，取消掌握后按原排期继续。
+- **导出 / 导入**：`{ schema: 3, app: 'english-reader', exportedAt, history, vocab, review, settings }`。导入仍只合并：复习记录逐词取 `updatedAt` 较新的那条（相同时取 reps 更多的）；文件里生词本没有的词的复习记录会被丢弃。schema 2（0.6.0）、schema 1 和没有版本号的旧生词本文件照常合并，本机的复习数据不变，新词成为新卡。
+- **离线**：复习页打包在主程序里，Service Worker 预缓存全部文件和词典，断网也能复习、评分。
+- 纯逻辑在 `src/shared/review.ts`（单元测试 `scripts/test-unit.ts`），页面 `src/views/review.ts`、`src/views/due.ts`；截图 `node scripts/screenshots-review.mjs` → `screenshots/review-*.png`（只写自己的文件，不删别的截图）。
 
 ## 目录结构
 
@@ -98,8 +123,10 @@ scripts/
 src/
   shared/text.ts          分词 + 词元解析（构建脚本与浏览器共用同一份代码）
   shared/types.ts
+  shared/history.ts       阅读记录 + 备份格式（纯函数）
+  shared/review.ts        生词复习：间隔重复排期、今日待复习、筛选、复习数据合并（纯函数）
   main.ts, router.ts, store.ts(localStorage), data.ts, popup.ts, tts.ts, dom.ts, pwa.ts, backup-ui.ts
-  views/list.ts reader.ts words.ts settings.ts about.ts
+  views/list.ts reader.ts words.ts review.ts due.ts settings.ts about.ts classics.ts classic-reader.ts history.ts
   style.css
 tests/lemma-cases.json    回归用例
 public/data/              （生成物，gitignore）index.json、articles/*.json、dict/forms.json、dict/entries-{b1,b2,c1}.json

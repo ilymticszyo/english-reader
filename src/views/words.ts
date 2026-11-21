@@ -6,6 +6,8 @@ import { LEVEL_RANK } from '../shared/types.ts';
 import { STORAGE_WARN_BYTES, getVocab, onChange, removeWord, restoreWord, setMastered, storageUsage } from '../store.ts';
 import type { VocabItem } from '../store.ts';
 import { speak, ttsSupported } from '../tts.ts';
+import { renderDueBanner } from './due.ts';
+import { ctxHref } from './review.ts';
 
 const state = { sort: 'recent', cefr: '', showMastered: false, q: '', shown: 50 };
 const PAGE = 50;
@@ -16,6 +18,7 @@ function storageWarning(): HTMLElement {
 
 export function mountWords(root: HTMLElement): () => void {
   const summary = h('p', { class: 'muted', id: 'vocab-summary' });
+  const due = h('a', { id: 'due-words', href: '#/review' });
   const list = h('div', { class: 'vocab-list' });
   const more = h('div', { class: 'more' });
 
@@ -31,8 +34,9 @@ export function mountWords(root: HTMLElement): () => void {
   root.append(
     h('h1', null, '生词本'),
     summary,
+    due,
     backupControls(),
-    h('div', { class: 'muted small backup-note' }, '备份包含生词本、阅读进度和设置。浏览器清缓存会丢失数据，建议定期导出。'),
+    h('div', { class: 'muted small backup-note' }, '备份包含生词本、复习进度、阅读进度和设置。浏览器清缓存会丢失数据，建议定期导出。'),
     storageWarning(),
     h('div', { class: 'filters' }, search, sortSel, cefrSel, h('label', { class: 'check' }, masteredCb, ' 显示已掌握')),
     list,
@@ -42,7 +46,7 @@ export function mountWords(root: HTMLElement): () => void {
   function row(lemma: string, it: VocabItem): HTMLElement {
     const ctxBox = h('div', { class: 'ctx-box', hidden: true });
     for (const c of [...it.ctx].reverse()) {
-      ctxBox.append(h('a', { class: 'ctx', href: `#/${c.a.startsWith('cl-') ? 'classics' : 'read'}/${c.a}?p=${c.p}&s=${encodeURIComponent(c.s)}`, title: '回到原文' },
+      ctxBox.append(h('a', { class: 'ctx', href: ctxHref(c), title: '回到原文' },
         h('span', null, c.s), h('span', { class: 'muted small' }, ` — ${c.a}`)));
     }
     if (!it.ctx.length) ctxBox.append(h('div', { class: 'muted small' }, '暂无语境'));
@@ -81,6 +85,7 @@ export function mountWords(root: HTMLElement): () => void {
     items.sort((a, b) => state.sort === 'alpha' ? a[0].localeCompare(b[0]) : state.sort === 'count' ? b[1].count - a[1].count || b[1].lastAt - a[1].lastAt : b[1].lastAt - a[1].lastAt);
     const mastered = all.filter(([, i]) => i.mastered).length;
     summary.textContent = `共 ${all.length} 个生词，其中已掌握 ${mastered} 个；当前显示 ${items.length} 个`;
+    renderDueBanner(due);
     clear(list);
     clear(more);
     if (!items.length) {
@@ -93,5 +98,5 @@ export function mountWords(root: HTMLElement): () => void {
     if (items.length > state.shown) more.append(h('button', { class: 'btn', type: 'button', onclick: () => { state.shown += PAGE; render(); } }, `显示更多（还有 ${items.length - state.shown} 个）`));
   }
   render();
-  return onChange((w) => (w === 'vocab' || w === 'all') && render());
+  return onChange((w) => (w === 'vocab' || w === 'all' ? render() : w === 'review' && renderDueBanner(due)));
 }

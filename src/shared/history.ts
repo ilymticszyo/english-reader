@@ -3,8 +3,11 @@
 // Storage: localStorage `ra:v1:progress` = { [articleId | classicId]: Progress }  (keyed by article ID; cl-… ids are classics)
 //   progress schema 1 (≤ 0.5.0): { status, scroll, updatedAt }
 //   progress schema 2 (0.6.0):   + readAt (first time the article was finished; removed when marked unread again)
-// Backup file (one JSON): { schema: 2, app: 'english-reader', exportedAt, history, vocab, settings }
+// Backup file (one JSON): { schema: 3, app: 'english-reader', exportedAt, history, vocab, review, settings }
+//   schema 3 (0.7.0) adds `review` (spaced-repetition data per word, see review.ts); schema 2 files have no review;
 //   schema 1 files used `progress` instead of `history`; vocab-only files (no progress at all) are accepted too.
+import { normalizeReview, pruneReview } from './review.ts';
+import type { ReviewMap } from './review.ts';
 
 export type Status = 'unread' | 'reading' | 'read';
 export interface Progress {
@@ -34,7 +37,7 @@ export interface VocabItem {
 export type VocabMap = Record<string, VocabItem>;
 
 export const PROGRESS_SCHEMA = 2;
-export const BACKUP_SCHEMA = 2;
+export const BACKUP_SCHEMA = 3;
 const STATUSES: Status[] = ['unread', 'reading', 'read'];
 const RANK: Record<Status, number> = { unread: 0, reading: 1, read: 2 };
 const num = (x: unknown, d = 0) => (typeof x === 'number' && Number.isFinite(x) ? x : d);
@@ -139,16 +142,20 @@ export interface Backup<S = Record<string, unknown>> {
   /** reading history keyed by article id */
   history: ProgressMap;
   vocab: VocabMap;
+  /** spaced-repetition data keyed by vocab word (schema 3+) */
+  review: ReviewMap;
   settings?: S;
 }
 export interface ParsedBackup extends Backup {
   /** schema of the file as read (0 = legacy vocab-only file without a schema field) */
   fileSchema: number;
   hasHistory: boolean;
+  hasReview: boolean;
 }
 
-export function makeBackup<S>(history: ProgressMap, vocab: VocabMap, settings: S, now = new Date()): Backup<S> {
-  return { schema: BACKUP_SCHEMA, app: 'english-reader', exportedAt: now.toISOString(), history, vocab, settings };
+/** Review records of words that are not in the vocab book are left out (no orphans in the file). */
+export function makeBackup<S>(history: ProgressMap, vocab: VocabMap, settings: S, now = new Date(), review: ReviewMap = {}): Backup<S> {
+  return { schema: BACKUP_SCHEMA, app: 'english-reader', exportedAt: now.toISOString(), history, vocab, review: pruneReview(review, vocab), settings };
 }
 
 const looksLikeVocabMap = (o: Record<string, unknown>) => {
@@ -156,7 +163,7 @@ const looksLikeVocabMap = (o: Record<string, unknown>) => {
   return vals.length > 0 && vals.every((v) => isObj(v) && ('addedAt' in v || 'ctx' in v || 'snap' in v));
 };
 
-/** Parse any export this app has produced: schema 2 (history + vocab), schema 1 (progress + vocab, or vocab only),
+/** Parse any export this app has produced: schema 3 (history + vocab + review), schema 2 (history + vocab), schema 1 (progress + vocab, or vocab only),
  *  and a bare vocab book ({ vocab } or the vocab map itself). Throws a user-facing (Chinese) message otherwise. */
 export function parseBackupText(text: string): ParsedBackup {
   let o: any;
@@ -185,7 +192,9 @@ export function parseBackupText(text: string): ParsedBackup {
   }
   const rawHist = fileSchema >= 2 ? o.history : (o.history ?? o.progress);
   const history = migrateProgress(rawHist);
-  return { schema: BACKUP_SCHEMA, app: 'english-reader', exportedAt: typeof o.exportedAt === 'string' ? o.exportedAt : '', history, vocab, settings: isObj(o.settings) ? o.settings : undefined, fileSchema, hasHistory: isObj(rawHist) };
+  const hasReview = fileSchema >= 3 && isObj(o.review);
+  const review = hasReview ? normalizeReview(o.review) : {};
+  return { schema: BACKUP_SCHEMA, app: 'english-reader', exportedAt: typeof o.exportedAt === 'string' ? o.exportedAt : '', history, vocab, review, settings: isObj(o.settings) ? o.settings : undefined, fileSchema, hasHistory: isObj(rawHist), hasReview };
 }
 
 /** One progress line per pool: read / total, counting only ids that exist in the current content. */

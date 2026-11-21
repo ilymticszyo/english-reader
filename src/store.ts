@@ -3,11 +3,14 @@ import { toast } from './dom.ts';
 import type { Level } from './shared/types.ts';
 import { PROGRESS_SCHEMA, applyPatch, makeBackup, mergeProgress, mergeVocab, migrateProgress, parseBackupText } from './shared/history.ts';
 import type { Backup, ParsedBackup, Progress, ProgressMap, Status, VocabCtx, VocabItem, VocabMap } from './shared/history.ts';
+import { dayKey, dueToday, mergeReview, normalizeReview, pruneReview, schedule } from './shared/review.ts';
+import type { DueInfo, Grade, ReviewFilter, ReviewMap, ReviewRecord } from './shared/review.ts';
 export type { Backup, ParsedBackup, Progress, ProgressMap, Status, VocabCtx, VocabItem, VocabMap };
+export type { DueInfo, Grade, ReviewFilter, ReviewMap, ReviewRecord };
 
 export const PREFIX = 'ra:v1:';
-/** storage schema (ra:v1:meta.schema); 2 = progress entries carry readAt (0.6.0) */
-export const SCHEMA = PROGRESS_SCHEMA;
+/** storage schema (ra:v1:meta.schema): 2 = progress entries carry readAt (0.6.0); 3 = ra:v1:review added (0.7.0) */
+export const SCHEMA = 3;
 
 export interface Settings {
   fontSize: number; // 0..3
@@ -58,7 +61,7 @@ function write(name: string, value: unknown): boolean {
   }
 }
 
-type Listener = (what: 'settings' | 'progress' | 'vocab' | 'all') => void;
+type Listener = (what: 'settings' | 'progress' | 'vocab' | 'review' | 'all') => void;
 const listeners = new Set<Listener>();
 export const onChange = (fn: Listener) => {
   listeners.add(fn);
@@ -67,31 +70,51 @@ export const onChange = (fn: Listener) => {
 const emit: Listener = (w) => listeners.forEach((f) => f(w));
 
 let settings: Settings = { ...DEFAULT_SETTINGS, ...read<Partial<Settings>>('settings', {}) };
-let vocab: VocabMap = read<VocabMap>('vocab', {});
+let vocabOk = true;
+let vocab: VocabMap = (() => {
+  const raw = localStorage.getItem(PREFIX + 'vocab');
+  try { return raw ? { ...JSON.parse(raw) } : {}; } catch { vocabOk = false; return {}; }
+})();
 type Meta = { schema: number; createdAt: number; lastBackupAt?: number; migratedAt?: number };
 export const getMeta = () => read<Meta>('meta', { schema: SCHEMA, createdAt: 0 });
-let progress: ProgressMap = loadProgress();
+let progress: ProgressMap = {};
+let review: ReviewMap = {};
+migrateStorage();
 
-/** Reads ra:v1:progress and migrates older entries in place (schema 1 → 2: readAt added). Nothing is dropped:
- *  the untouched old value is kept once under ra:v1:progress.bak-v<old schema>. */
-function loadProgress(): ProgressMap {
+/** Loads progress + review and upgrades older stores in place. Nothing is dropped:
+ *  schema 1 → 2: progress entries get readAt; the untouched old progress is kept once under ra:v1:progress.bak-v1.
+ *  schema 2 → 3: ra:v1:review is added (empty; an existing one is kept); the old meta is kept under ra:v1:meta.bak-v2.
+ *  Review records of words no longer in the vocab book are pruned (unless the vocab book itself failed to parse). */
+function migrateStorage() {
   const metaRaw = localStorage.getItem(PREFIX + 'meta');
   const raw = localStorage.getItem(PREFIX + 'progress');
   let parsed: unknown = {};
   try { parsed = raw ? JSON.parse(raw) : {}; } catch { parsed = {}; }
-  const map = migrateProgress(parsed);
+  progress = migrateProgress(parsed);
+  const revRaw = localStorage.getItem(PREFIX + 'review');
+  let revParsed: unknown = {};
+  try { revParsed = revRaw ? JSON.parse(revRaw) : {}; } catch { revParsed = {}; }
+  review = normalizeReview(revParsed);
+  if (vocabOk) {
+    const pruned = pruneReview(review, vocab);
+    if (Object.keys(pruned).length !== Object.keys(review).length) { review = pruned; write('review', review); }
+  }
   if (!metaRaw) {
     write('meta', { schema: SCHEMA, createdAt: Date.now() });
-    if (raw) write('progress', map);
-    return map;
+    if (raw) write('progress', progress);
+    if (!revRaw) write('review', review);
+    return;
   }
   const meta = getMeta();
-  if ((meta.schema ?? 1) < SCHEMA) {
-    try { if (raw) localStorage.setItem(`${PREFIX}progress.bak-v${meta.schema ?? 1}`, raw); } catch { /* quota: the migration itself is lossless */ }
-    write('progress', map);
-    write('meta', { ...meta, schema: SCHEMA, migratedAt: Date.now() });
+  const old = meta.schema ?? 1;
+  if (old >= SCHEMA) return;
+  if (old < PROGRESS_SCHEMA) {
+    try { if (raw) localStorage.setItem(`${PREFIX}progress.bak-v${old}`, raw); } catch { /* quota: the migration itself is lossless */ }
+    write('progress', progress);
   }
-  return map;
+  try { localStorage.setItem(`${PREFIX}meta.bak-v${old}`, metaRaw); } catch { /* quota */ }
+  if (!revRaw) write('review', review);
+  write('meta', { ...meta, schema: SCHEMA, migratedAt: Date.now() });
 }
 export function markBackup() {
   write('meta', { ...getMeta(), lastBackupAt: Date.now() });
@@ -157,16 +180,26 @@ export function addWord(lemma: string, snap: VocabItem['snap'], ctx: VocabCtx | 
   write('vocab', vocab);
   emit('vocab');
 }
+/** review records of words removed in this session, so 撤销 (undo) brings the schedule back too */
+const removedReview = new Map<string, ReviewRecord>();
 export function removeWord(lemma: string): VocabItem | undefined {
   const it = vocab[lemma];
   delete vocab[lemma];
   write('vocab', vocab);
+  if (review[lemma]) {
+    removedReview.set(lemma, review[lemma]);
+    delete review[lemma];
+    write('review', review);
+  }
   emit('vocab');
   return it;
 }
 export function restoreWord(lemma: string, it: VocabItem) {
   vocab[lemma] = it;
   write('vocab', vocab);
+  const r = removedReview.get(lemma);
+  if (r && !review[lemma]) { review[lemma] = r; write('review', review); }
+  removedReview.delete(lemma);
   emit('vocab');
 }
 export function setMastered(lemma: string, v: boolean) {
@@ -176,22 +209,39 @@ export function setMastered(lemma: string, v: boolean) {
   emit('vocab');
 }
 
+// ---------- review (生词复习) ----------
+export const getReview = () => review;
+export const today = () => dayKey(Date.now());
+export const getDue = (f: ReviewFilter = {}): DueInfo => dueToday(vocab, review, today(), f);
+/** Grade one card (0 忘了 … 3 简单) and store the new schedule. */
+export function gradeWord(lemma: string, g: Grade): ReviewRecord | undefined {
+  if (!vocab[lemma]) return undefined;
+  const now = Date.now();
+  review[lemma] = schedule(review[lemma], g, now, dayKey(now));
+  write('review', review);
+  emit('review');
+  return review[lemma];
+}
+
 // ---------- backup ----------
-/** One JSON file: reading history + vocab book (+ settings), with a schema version. */
-export const exportBackup = (): Backup<Settings> => makeBackup(progress, vocab, settings);
+/** One JSON file: reading history + vocab book + review schedule (+ settings), with a schema version. */
+export const exportBackup = (): Backup<Settings> => makeBackup(progress, vocab, settings, new Date(), review);
 export const parseBackup = (text: string): ParsedBackup => parseBackupText(text);
 
 /** Import always merges (never replaces): local-only words / history stay, the newer change per article wins.
  *  Settings in the file are ignored (they are device preferences). */
-export function importBackup(b: ParsedBackup): { wordsAdded: number; historyAdded: number; historyUpdated: number } {
+export function importBackup(b: ParsedBackup): { wordsAdded: number; historyAdded: number; historyUpdated: number; reviewAdded: number; reviewUpdated: number } {
   const v = mergeVocab(vocab, b.vocab);
   const p = mergeProgress(progress, b.history);
+  const r = mergeReview(review, pruneReview(b.review ?? {}, v.map));
   vocab = v.map;
   progress = p.map;
+  review = pruneReview(r.map, vocab);
   write('vocab', vocab);
   write('progress', progress);
+  write('review', review);
   emit('all');
-  return { wordsAdded: v.added, historyAdded: p.added, historyUpdated: p.updated };
+  return { wordsAdded: v.added, historyAdded: p.added, historyUpdated: p.updated, reviewAdded: r.added, reviewUpdated: r.updated };
 }
 
 export const STORAGE_WARN_BYTES = 4 * 1024 * 1024;

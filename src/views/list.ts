@@ -4,6 +4,7 @@ import type { ClassicMeta } from '../shared/types.ts';
 import { LEVELS } from '../shared/types.ts';
 import type { ArticleMeta, Level } from '../shared/types.ts';
 import { loadPools, renderHistorySummary } from './history.ts';
+import { renderDueBanner } from './due.ts';
 import { getProgress, getSettings, getStatus, minutesOf, onChange, setSettings } from '../store.ts';
 import type { Status } from '../store.ts';
 
@@ -25,9 +26,10 @@ export async function mountList(root: HTMLElement): Promise<() => void> {
   const tabs = h('div', { class: 'tabs', role: 'tablist' });
   const progressLine = h('section', { class: 'history-summary' });
   const cont = h('div', { class: 'continue' });
+  const due = h('a', { id: 'due-home', href: '#/review' });
   const controls = h('div', { class: 'filters' });
   const list = h('div', { class: 'cards', role: 'list' });
-  root.append(h('h1', { class: 'sr-only' }, '文章列表'), tabs, progressLine, cont, controls, list);
+  root.append(h('h1', { class: 'sr-only' }, '文章列表'), tabs, progressLine, due, cont, controls, list);
 
   const topicSel = h('select', { 'aria-label': '按话题筛选', onchange: (e: Event) => { filters.topic = (e.target as HTMLSelectElement).value; renderList(); } });
   const statusSel = h('select', { 'aria-label': '按阅读状态筛选', onchange: (e: Event) => { filters.status = (e.target as HTMLSelectElement).value as Status; renderList(); } },
@@ -102,9 +104,10 @@ export async function mountList(root: HTMLElement): Promise<() => void> {
     renderTabs();
     renderHistorySummary(progressLine, pools, level);
     renderContinue();
+    renderDueBanner(due);
     renderTopics();
     renderList();
   };
   renderAll();
-  return onChange((w) => (w === 'progress' || w === 'settings' || w === 'all') && renderAll());
+  return onChange((w) => (w === 'progress' || w === 'settings' || w === 'all' ? renderAll() : (w === 'vocab' || w === 'review') && renderDueBanner(due)));
 }
